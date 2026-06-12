@@ -1,4 +1,0 @@
-#Fri Jun 12 10:43:27 CST 2026
-base.0=C\:\\Users\\lenovo\\HideRecents\\app\\build\\intermediates\\dex\\release\\mergeDexRelease\\classes.dex
-renamed.0=classes.dex
-path.0=classes.dex

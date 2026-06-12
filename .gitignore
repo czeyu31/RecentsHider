@@ -4,7 +4,12 @@
 /.idea
 .DS_Store
 /build
+/app/build
 /captures
 .externalNativeBuild
 .cxx
 local.properties
+tools/
+release.keystore
+MinGit/
+MinGit.zip
