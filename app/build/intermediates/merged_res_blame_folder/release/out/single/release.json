@@ -1,0 +1,126 @@
+[
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_teal.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_teal.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/layout_dialog_app_detail.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/layout/dialog_app_detail.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_green.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_green.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_cyan.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_cyan.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_red.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_red.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_gray.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_gray.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_ic_settings.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/ic_settings.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/menu_bottom_nav.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/menu/bottom_nav.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_ic_uninstall.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/ic_uninstall.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/ic_launcher_background.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/menu_main_menu.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/menu/main_menu.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/layout_activity_main.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_orange.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_orange.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_icon_background.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/icon_background.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/layout_item_command.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/layout/item_command.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_brown.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_brown.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_blue.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_blue.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_ic_apps.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/ic_apps.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/layout_dialog_color_picker.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/layout/dialog_color_picker.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_ic_terminal.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/ic_terminal.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_black.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_black.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_pink.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_pink.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_ic_expand_more.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/ic_expand_more.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_white.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_white.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/layout_fragment_adb.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/layout/fragment_adb.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_ic_color_palette.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/ic_color_palette.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/layout_item_app.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/layout/item_app.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-merged_res-33:/drawable_color_circle_purple.xml.flat",
+        "source": "com.example.hiderecents.app-main-34:/drawable/color_circle_purple.xml"
+    }
+]

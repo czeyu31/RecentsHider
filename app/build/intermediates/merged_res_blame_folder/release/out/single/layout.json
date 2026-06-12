@@ -1,0 +1,26 @@
+[
+    {
+        "merged": "com.example.hiderecents.app-mergeReleaseResources-32:/layout/dialog_color_picker.xml",
+        "source": "com.example.hiderecents.app-main-34:/layout/dialog_color_picker.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-mergeReleaseResources-32:/layout/activity_main.xml",
+        "source": "com.example.hiderecents.app-main-34:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-mergeReleaseResources-32:/layout/item_command.xml",
+        "source": "com.example.hiderecents.app-main-34:/layout/item_command.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-mergeReleaseResources-32:/layout/item_app.xml",
+        "source": "com.example.hiderecents.app-main-34:/layout/item_app.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-mergeReleaseResources-32:/layout/fragment_adb.xml",
+        "source": "com.example.hiderecents.app-main-34:/layout/fragment_adb.xml"
+    },
+    {
+        "merged": "com.example.hiderecents.app-mergeReleaseResources-32:/layout/dialog_app_detail.xml",
+        "source": "com.example.hiderecents.app-main-34:/layout/dialog_app_detail.xml"
+    }
+]

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Recents Hider</string>
+    <string name="restore_all">全部恢复</string>
+    <string name="search_hint">搜索应用...</string>
+    <string name="hidden_count">已隐藏 %d 个</string>
+    <string name="no_results">未找到匹配的应用</string>
+</resources>

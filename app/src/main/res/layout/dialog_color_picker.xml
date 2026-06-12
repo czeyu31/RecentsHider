@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="选择主题颜色"
+        android:textSize="16sp"
+        android:textColor="@color/md_theme_onSurface"
+        android:layout_marginBottom="16dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <View
+            android:id="@+id/color_0"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_blue" />
+
+        <View
+            android:id="@+id/color_1"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_green" />
+
+        <View
+            android:id="@+id/color_2"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_purple" />
+
+        <View
+            android:id="@+id/color_3"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_orange" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <View
+            android:id="@+id/color_4"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_red" />
+
+        <View
+            android:id="@+id/color_5"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_teal" />
+
+        <View
+            android:id="@+id/color_6"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_pink" />
+
+        <View
+            android:id="@+id/color_7"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_cyan" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <View
+            android:id="@+id/color_8"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_white" />
+
+        <View
+            android:id="@+id/color_9"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_gray" />
+
+        <View
+            android:id="@+id/color_10"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_black" />
+
+        <View
+            android:id="@+id/color_11"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/color_circle_brown" />
+
+    </LinearLayout>
+
+</LinearLayout>
