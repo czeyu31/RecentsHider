@@ -2,6 +2,12 @@
 
 一款基于 Shizuku 的 Android 应用，可以将指定应用从最近任务列表中隐藏。
 
+## ⬇️ 下载
+
+[![Download APK](https://img.shields.io/github/v/release/czeyu31/RecentsHider?label=下载最新版&style=for-the-badge)](https://github.com/czeyu31/RecentsHider/releases/latest)
+
+或访问 [Releases 页面](https://github.com/czeyu31/RecentsHider/releases) 查看所有版本。
+
 ## 功能
 
 - 🔍 搜索应用
