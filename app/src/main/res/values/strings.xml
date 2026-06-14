@@ -1,8 +1,21 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Recents Hider</string>
-    <string name="restore_all">全部恢复</string>
+    <string name="app_name">System Tool</string>
+    <string name="hidden_count">已隐藏 %d 个应用</string>
+    <string name="toolbox">工具箱</string>
+    <string name="adb_commands">ADB 命令</string>
+    <string name="notification_history">历史通知</string>
+    <string name="app_management">应用管理</string>
+    <string name="app_detail">应用详情</string>
+    <string name="cpu_usage">处理器 CPU</string>
+    <string name="memory_usage">内存 RAM</string>
+    <string name="storage">存储</string>
+    <string name="battery">电池</string>
+    <string name="network">网络</string>
+    <string name="performance_mode">性能模式</string>
+    <string name="system_health">系统健康度</string>
+    <string name="one_key_boost">一键加速</string>
+    <string name="close">关闭</string>
     <string name="search_hint">搜索应用...</string>
-    <string name="hidden_count">已隐藏 %d 个</string>
-    <string name="no_results">未找到匹配的应用</string>
+    <string name="no_notifications">暂无通知记录</string>
+    <string name="grant_notification_access">请授予通知访问权限以记录通知</string>
 </resources>

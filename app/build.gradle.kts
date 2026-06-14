@@ -8,30 +8,16 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.hiderecents"
+        applicationId = "com.tools.systemtool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 43
-        versionName = "12.1"
-    }
-
-    signingConfigs {
-        create("release") {
-            storeFile = file("${rootProject.projectDir}/release.keystore")
-            storePassword = "hide123"
-            keyAlias = "hiderecents"
-            keyPassword = "hide123"
-        }
+        versionCode = 92
+        versionName = "9.2"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
         }
     }
     compileOptions {
@@ -43,7 +29,6 @@ android {
     }
     buildFeatures {
         viewBinding = true
-        aidl = true
     }
 }
 

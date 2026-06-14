@@ -31,14 +31,14 @@
                 android:layout_height="wrap_content"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:textColor="@color/md_theme_onSurface" />
+                android:textColor="@color/on_surface" />
 
             <TextView
                 android:id="@+id/tvDetailPackageName"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textSize="13sp"
-                android:textColor="@color/md_theme_onSurfaceVariant"
+                android:textColor="@color/on_surface_variant"
                 android:layout_marginTop="2dp" />
 
         </LinearLayout>
@@ -47,7 +47,7 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="@color/md_theme_surfaceVariant"
+        android:background="@color/surface_variant"
         android:layout_marginBottom="12dp" />
 
     <TextView
@@ -55,7 +55,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="14sp"
-        android:textColor="@color/md_theme_onSurface"
+        android:textColor="@color/on_surface"
         android:layout_marginBottom="8dp" />
 
     <TextView
@@ -63,7 +63,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="14sp"
-        android:textColor="@color/md_theme_onSurface"
+        android:textColor="@color/on_surface"
         android:layout_marginBottom="8dp" />
 
     <TextView
@@ -71,7 +71,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="14sp"
-        android:textColor="@color/md_theme_onSurface"
+        android:textColor="@color/on_surface"
         android:layout_marginBottom="8dp" />
 
     <TextView
@@ -79,13 +79,13 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="14sp"
-        android:textColor="@color/md_theme_onSurface"
+        android:textColor="@color/on_surface"
         android:layout_marginBottom="12dp" />
 
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="@color/md_theme_surfaceVariant"
+        android:background="@color/surface_variant"
         android:layout_marginBottom="12dp" />
 
     <TextView
@@ -94,7 +94,7 @@
         android:text="权限列表"
         android:textSize="15sp"
         android:textStyle="bold"
-        android:textColor="@color/md_theme_onSurface"
+        android:textColor="@color/on_surface"
         android:layout_marginBottom="8dp" />
 
     <ScrollView
@@ -107,7 +107,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textSize="12sp"
-            android:textColor="@color/md_theme_onSurfaceVariant"
+            android:textColor="@color/on_surface_variant"
             android:lineSpacingExtra="4dp" />
     </ScrollView>
 

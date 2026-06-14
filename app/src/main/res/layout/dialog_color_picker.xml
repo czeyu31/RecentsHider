@@ -10,7 +10,7 @@
         android:layout_height="wrap_content"
         android:text="选择主题颜色"
         android:textSize="16sp"
-        android:textColor="@color/md_theme_onSurface"
+        android:textColor="@color/on_surface"
         android:layout_marginBottom="16dp" />
 
     <LinearLayout

@@ -1,45 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="md_theme_primary">#FF90CAF9</color>
-    <color name="md_theme_onPrimary">#FF003258</color>
-    <color name="md_theme_background">#FF111318</color>
-    <color name="md_theme_onBackground">#FFE2E2E9</color>
-    <color name="md_theme_surface">#FF111318</color>
-    <color name="md_theme_onSurface">#FFE2E2E9</color>
-    <color name="md_theme_surfaceVariant">#FF43474E</color>
-    <color name="md_theme_onSurfaceVariant">#FFC3C6CF</color>
-    <color name="md_theme_surfaceContainer">#FF1D2024</color>
-    <color name="md_theme_surfaceContainerHigh">#FF272A2F</color>
-    <color name="md_theme_primaryContainer">#FF00497D</color>
-    <color name="md_theme_outline">#FF8D9199</color>
-    <color name="md_theme_error">#FFFFB4AB</color>
-    <color name="md_theme_onError">#FF690005</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
 
-    <color name="theme_blue">#FF90CAF9</color>
-    <color name="theme_green">#FFA5D6A7</color>
-    <color name="theme_purple">#FFCE93D8</color>
-    <color name="theme_orange">#FFFFCC80</color>
-    <color name="theme_red">#FFEF9A9A</color>
-    <color name="theme_teal">#FF80CBC4</color>
-    <color name="theme_pink">#FFF48FB1</color>
-    <color name="theme_cyan">#FF80DEEA</color>
-    <color name="theme_white">#FFFFFFFF</color>
-    <color name="theme_gray">#FFBDBDBD</color>
-    <color name="theme_black">#FF000000</color>
-    <color name="theme_brown">#FFA1887F</color>
+    <!-- Obsidian System Colors -->
+    <color name="background">#FF131313</color>
+    <color name="surface">#FF131313</color>
+    <color name="surface_dim">#FF131313</color>
+    <color name="surface_bright">#FF393939</color>
+    <color name="surface_container_lowest">#FF0E0E0E</color>
+    <color name="surface_container_low">#FF1C1B1B</color>
+    <color name="surface_container">#FF20201F</color>
+    <color name="surface_container_high">#FF2A2A2A</color>
+    <color name="surface_container_highest">#FF353535</color>
+    <color name="surface_variant">#FF353535</color>
 
-    <array name="theme_colors">
-        <item>@color/theme_blue</item>
-        <item>@color/theme_green</item>
-        <item>@color/theme_purple</item>
-        <item>@color/theme_orange</item>
-        <item>@color/theme_red</item>
-        <item>@color/theme_teal</item>
-        <item>@color/theme_pink</item>
-        <item>@color/theme_cyan</item>
-        <item>@color/theme_white</item>
-        <item>@color/theme_gray</item>
-        <item>@color/theme_black</item>
-        <item>@color/theme_brown</item>
-    </array>
+    <color name="on_surface">#FFE5E2E1</color>
+    <color name="on_surface_variant">#FFC2C6D7</color>
+    <color name="outline">#FF8C90A0</color>
+    <color name="outline_variant">#FF424655</color>
+
+    <color name="primary">#FFB0C6FF</color>
+    <color name="on_primary">#FF002D6E</color>
+    <color name="primary_container">#FF558DFF</color>
+    <color name="on_primary_container">#FF002661</color>
+
+    <color name="secondary">#FFBDF4FF</color>
+    <color name="on_secondary">#FF00363D</color>
+    <color name="secondary_container">#FF00E3FD</color>
+    <color name="on_secondary_container">#FF00616D</color>
+
+    <color name="tertiary">#FFFFB692</color>
+    <color name="on_tertiary">#FF562000</color>
+    <color name="tertiary_container">#FFEB6A19</color>
+    <color name="on_tertiary_container">#FF4B1B00</color>
+
+    <color name="error">#FFFFB4AB</color>
+    <color name="on_error">#FF690005</color>
+    <color name="error_container">#FF93000A</color>
+    <color name="on_error_container">#FFFFDAD6</color>
 </resources>
