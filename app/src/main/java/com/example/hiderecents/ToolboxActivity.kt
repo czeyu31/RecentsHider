@@ -28,6 +28,18 @@ class ToolboxActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.toolNotifications).setOnClickListener {
             startActivity(Intent(this, NotificationHistoryActivity::class.java))
         }
+
+        findViewById<LinearLayout>(R.id.toolFileTransfer).setOnClickListener {
+            startActivity(Intent(this, FileTransferActivity::class.java))
+        }
+
+        findViewById<LinearLayout>(R.id.toolApkInstaller).setOnClickListener {
+            startActivity(Intent(this, ApkInstallerActivity::class.java))
+        }
+
+        findViewById<LinearLayout>(R.id.toolHeartRate).setOnClickListener {
+            startActivity(Intent(this, HeartRateActivity::class.java))
+        }
     }
 
     private fun closePanel() {

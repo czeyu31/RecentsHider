@@ -77,7 +77,8 @@ class AppManageActivity : AppCompatActivity() {
         recyclerView.layoutManager = LinearLayoutManager(this)
         adapter = AppListAdapter(
             onToggle = { pkg, hide -> toggleAppVisibility(pkg, hide) },
-            onUninstall = { pkg, name -> confirmUninstall(pkg, name) }
+            onUninstall = { pkg, name -> confirmUninstall(pkg, name) },
+            onLongPress = { app -> showAppDetail(app) }
         )
         recyclerView.adapter = adapter
 
@@ -239,6 +240,81 @@ class AppManageActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showAppDetail(app: AppItem) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_app_detail, null)
+        val ivIcon: ImageView = dialogView.findViewById(R.id.ivDetailIcon)
+        val tvName: TextView = dialogView.findViewById(R.id.tvDetailAppName)
+        val tvPkg: TextView = dialogView.findViewById(R.id.tvDetailPackageName)
+        val tvVersion: TextView = dialogView.findViewById(R.id.tvDetailVersion)
+        val tvVersionCode: TextView = dialogView.findViewById(R.id.tvDetailVersionCode)
+        val tvTargetSdk: TextView = dialogView.findViewById(R.id.tvDetailTargetSdk)
+        val tvMinSdk: TextView = dialogView.findViewById(R.id.tvDetailMinSdk)
+        val tvPermissions: TextView = dialogView.findViewById(R.id.tvDetailPermissions)
+        val btnExtract: com.google.android.material.button.MaterialButton = dialogView.findViewById(R.id.btnExtractApk)
+        val btnSettings: com.google.android.material.button.MaterialButton = dialogView.findViewById(R.id.btnOpenSettings)
+
+        try {
+            val pm = packageManager
+            val appInfo = pm.getApplicationInfo(app.packageName, PackageManager.GET_META_DATA)
+            val packageInfo = pm.getPackageInfo(app.packageName, PackageManager.GET_PERMISSIONS)
+
+            Glide.with(this).load(app.icon).into(ivIcon)
+            tvName.text = app.appName
+            tvPkg.text = app.packageName
+            tvVersion.text = "版本: ${packageInfo.versionName}"
+            tvVersionCode.text = "版本号: ${packageInfo.longVersionCode}"
+            tvTargetSdk.text = "Target SDK: ${appInfo.targetSdkVersion}"
+            tvMinSdk.text = "Min SDK: ${appInfo.minSdkVersion}"
+
+            val permissions = packageInfo.requestedPermissions
+            tvPermissions.text = if (permissions != null) permissions.joinToString("\n") else "无权限"
+        } catch (_: Exception) {}
+
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setView(dialogView)
+            .setCancelable(true)
+            .create()
+
+        btnExtract.setOnClickListener {
+            extractApk(app.packageName, app.appName)
+            dialog.dismiss()
+        }
+
+        btnSettings.setOnClickListener {
+            try {
+                startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:${app.packageName}")))
+            } catch (_: Exception) {
+                Toast.makeText(this, "无法打开", Toast.LENGTH_SHORT).show()
+            }
+            dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    private fun extractApk(packageName: String, appName: String) {
+        Thread {
+            try {
+                val pm = packageManager
+                val appInfo = pm.getApplicationInfo(packageName, 0)
+                val src = appInfo.sourceDir
+                val dest = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS), "$appName.apk")
+                java.io.File(src).inputStream().use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                }
+                runOnUiThread {
+                    Toast.makeText(this, "已保存到: ${dest.absolutePath}", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "提取失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }.start()
+    }
+
     private fun uninstallApp(packageName: String, deleteData: Boolean) {
         if (!shizukuPermissionGranted || !serviceReady) {
             Toast.makeText(this, "Shizuku 未就绪", Toast.LENGTH_SHORT).show()
@@ -293,7 +369,8 @@ class AppManageActivity : AppCompatActivity() {
 
     inner class AppListAdapter(
         private val onToggle: (String, Boolean) -> Unit,
-        private val onUninstall: (String, String) -> Unit
+        private val onUninstall: (String, String) -> Unit,
+        private val onLongPress: (AppItem) -> Unit
     ) : RecyclerView.Adapter<AppListAdapter.VH>() {
         private var appList = listOf<AppItem>()
         fun submitList(list: List<AppItem>) { appList = list; notifyDataSetChanged() }
@@ -320,6 +397,7 @@ class AppManageActivity : AppCompatActivity() {
                 sw.setOnCheckedChangeListener { _, isChecked -> onToggle(app.packageName, isChecked) }
                 ivUninstall.setOnClickListener { onUninstall(app.packageName, app.appName) }
                 itemView.setOnClickListener { sw.toggle() }
+                itemView.setOnLongClickListener { onLongPress(app); true }
             }
         }
     }

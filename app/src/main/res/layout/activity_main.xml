@@ -45,6 +45,17 @@
             android:contentDescription="toolbox"
             android:padding="6dp"
             android:background="@drawable/bg_icon_button"
+            app:tint="@color/primary"
+            android:layout_marginEnd="8dp" />
+
+        <ImageView
+            android:id="@+id/btnSettings"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:src="@drawable/ic_settings"
+            android:contentDescription="settings"
+            android:padding="6dp"
+            android:background="@drawable/bg_icon_button"
             app:tint="@color/primary" />
     </LinearLayout>
 
@@ -482,24 +493,6 @@
                                 android:orientation="horizontal"
                                 android:layout_marginTop="4dp">
 
-                                <TextView
-                                    android:id="@+id/tvMemUsed"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="0 GB"
-                                    android:textSize="18sp"
-                                    android:textColor="@color/on_surface"
-                                    android:textStyle="bold" />
-
-                                <TextView
-                                    android:id="@+id/tvMemTotal"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text=" / 0 GB"
-                                    android:textSize="12sp"
-                                    android:textColor="@color/on_surface_variant"
-                                    android:layout_gravity="bottom"
-                                    android:layout_marginBottom="2dp" />
                             </LinearLayout>
                         </LinearLayout>
 
@@ -513,75 +506,160 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
                         android:layout_marginTop="16dp">
 
+                        <!-- Ring Progress -->
+                        <com.example.hiderecents.MemoryRingView
+                            android:id="@+id/memRing"
+                            android:layout_width="56dp"
+                            android:layout_height="56dp"
+                            android:layout_marginEnd="16dp" />
+
+                        <!-- Right side -->
                         <LinearLayout
-                            android:layout_width="match_parent"
+                            android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical"
-                            android:layout_marginBottom="4dp">
+                            android:layout_weight="1"
+                            android:orientation="vertical">
 
-                            <TextView
-                                android:layout_width="0dp"
+                            <!-- Used % -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="系统核心"
-                                android:textSize="11sp"
-                                android:textColor="@color/on_surface_variant" />
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginBottom="8dp">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="Used"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/on_surface_variant" />
+
+                                <TextView
+                                    android:id="@+id/tvMemUsed"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="0%"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/primary"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <!-- 物理内存 -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginBottom="4dp">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="物理内存"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/on_surface_variant" />
+
+                                <TextView
+                                    android:id="@+id/tvMemSystem"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="0 GB"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/on_surface_variant" />
 
                             <TextView
-                                android:id="@+id/tvMemSystem"
+                                android:id="@+id/tvMemSystemPct"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="0 GB"
+                                android:text=" (0%)"
                                 android:textSize="11sp"
-                                android:textColor="@color/on_surface_variant" />
-                        </LinearLayout>
+                                android:textColor="@color/primary" />
+                            </LinearLayout>
 
-                        <ProgressBar
-                            android:id="@+id/pbMemSystem"
-                            style="@android:style/Widget.ProgressBar.Horizontal"
-                            android:layout_width="match_parent"
-                            android:layout_height="6dp"
-                            android:max="100"
-                            android:progress="0"
-                            android:progressDrawable="@drawable/bg_progress_bar" />
+                            <ProgressBar
+                                android:id="@+id/pbMemSystem"
+                                style="@android:style/Widget.ProgressBar.Horizontal"
+                                android:layout_width="match_parent"
+                                android:layout_height="6dp"
+                                android:max="100"
+                                android:progress="0"
+                                android:progressDrawable="@drawable/bg_progress_bar" />
 
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical"
-                            android:layout_marginTop="12dp"
-                            android:layout_marginBottom="4dp">
-
-                            <TextView
-                                android:layout_width="0dp"
+                            <!-- 交换分区 -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="应用程序"
-                                android:textSize="11sp"
-                                android:textColor="@color/on_surface_variant" />
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginTop="8dp"
+                                android:layout_marginBottom="4dp">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="交换分区"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/on_surface_variant" />
+
+                                <TextView
+                                    android:id="@+id/tvMemApps"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="0 GB"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/on_surface_variant" />
 
                             <TextView
-                                android:id="@+id/tvMemApps"
+                                android:id="@+id/tvMemAppsPct"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="0 GB"
+                                android:text=" (0%)"
                                 android:textSize="11sp"
-                                android:textColor="@color/on_surface_variant" />
-                        </LinearLayout>
+                                android:textColor="@color/primary" />
+                            </LinearLayout>
 
-                        <ProgressBar
-                            android:id="@+id/pbMemApps"
-                            style="@android:style/Widget.ProgressBar.Horizontal"
-                            android:layout_width="match_parent"
-                            android:layout_height="6dp"
-                            android:max="100"
-                            android:progress="0"
-                            android:progressDrawable="@drawable/bg_progress_bar" />
+                            <ProgressBar
+                                android:id="@+id/pbMemApps"
+                                style="@android:style/Widget.ProgressBar.Horizontal"
+                                android:layout_width="match_parent"
+                                android:layout_height="6dp"
+                                android:max="100"
+                                android:progress="0"
+                                android:progressDrawable="@drawable/bg_progress_bar" />
+
+                            <!-- SwapCached -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginTop="8dp">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="SwapCached"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/on_surface_variant" />
+
+                                <TextView
+                                    android:id="@+id/tvSwapCached"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="0 MB"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/on_surface_variant" />
+                            </LinearLayout>
+                        </LinearLayout>
                     </LinearLayout>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
@@ -765,7 +843,7 @@
                             android:textColor="@color/on_surface_variant" />
 
                         <LinearLayout
-                            android:layout_width="wrap_content"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="horizontal"
                             android:layout_marginTop="8dp">
@@ -787,41 +865,11 @@
                                 android:textColor="@color/on_surface_variant"
                                 android:layout_gravity="bottom"
                                 android:layout_marginBottom="2dp" />
-                        </LinearLayout>
 
-                        <LinearLayout
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:layout_marginTop="8dp">
-
-                            <ImageView
-                                android:layout_width="14dp"
-                                android:layout_height="14dp"
-                                android:src="@drawable/ic_thermostat"
-                                app:tint="@color/tertiary" />
-
-                            <TextView
-                                android:id="@+id/tvBatteryTemp"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="0°C"
-                                android:textSize="11sp"
-                                android:textColor="@color/on_surface_variant"
-                                android:layout_marginStart="4dp" />
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:layout_marginTop="4dp">
-
-                            <ImageView
-                                android:layout_width="14dp"
-                                android:layout_height="14dp"
-                                android:src="@drawable/ic_bolt"
-                                app:tint="@color/tertiary" />
+                            <View
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_weight="1" />
 
                             <TextView
                                 android:id="@+id/tvBatteryStatus"
@@ -830,7 +878,108 @@
                                 android:text="未知"
                                 android:textSize="11sp"
                                 android:textColor="@color/on_surface_variant"
-                                android:layout_marginStart="4dp" />
+                                android:layout_gravity="bottom"
+                                android:layout_marginBottom="2dp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="8dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="功率"
+                                android:textSize="10sp"
+                                android:textColor="@color/on_surface_variant" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="电压"
+                                android:textSize="10sp"
+                                android:textColor="@color/on_surface_variant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="2dp">
+
+                            <TextView
+                                android:id="@+id/tvBatteryPower"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="0 W"
+                                android:textSize="13sp"
+                                android:textColor="@color/on_surface"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvBatteryVoltage"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="0 V"
+                                android:textSize="13sp"
+                                android:textColor="@color/on_surface"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="8dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="温度"
+                                android:textSize="10sp"
+                                android:textColor="@color/on_surface_variant" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="电流"
+                                android:textSize="10sp"
+                                android:textColor="@color/on_surface_variant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="2dp">
+
+                            <TextView
+                                android:id="@+id/tvBatteryTemp"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="0°C"
+                                android:textSize="13sp"
+                                android:textColor="@color/on_surface"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvBatteryCurrent"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="0 mA"
+                                android:textSize="13sp"
+                                android:textColor="@color/on_surface"
+                                android:textStyle="bold" />
                         </LinearLayout>
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>
@@ -860,7 +1009,7 @@
                             android:textColor="@color/on_surface_variant" />
 
                         <LinearLayout
-                            android:layout_width="wrap_content"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="horizontal"
                             android:layout_marginTop="8dp">
@@ -882,28 +1031,123 @@
                                 android:textColor="@color/on_surface_variant"
                                 android:layout_gravity="bottom"
                                 android:layout_marginBottom="2dp" />
+
+                            <View
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_weight="1" />
+
+                            <TextView
+                                android:id="@+id/tvNetTypeLabel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text=""
+                                android:textSize="11sp"
+                                android:textColor="@color/secondary"
+                                android:layout_gravity="bottom"
+                                android:layout_marginBottom="2dp" />
                         </LinearLayout>
 
                         <LinearLayout
-                            android:layout_width="wrap_content"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="horizontal"
                             android:layout_marginTop="8dp">
 
-                            <ImageView
-                                android:layout_width="14dp"
-                                android:layout_height="14dp"
-                                android:src="@drawable/ic_wifi"
-                                app:tint="@color/secondary" />
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="信号"
+                                android:textSize="10sp"
+                                android:textColor="@color/on_surface_variant" />
 
                             <TextView
-                                android:id="@+id/tvNetType"
-                                android:layout_width="wrap_content"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:text="检测中..."
-                                android:textSize="11sp"
-                                android:textColor="@color/on_surface_variant"
-                                android:layout_marginStart="4dp" />
+                                android:layout_weight="1"
+                                android:text="速率"
+                                android:textSize="10sp"
+                                android:textColor="@color/on_surface_variant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="2dp">
+
+                            <TextView
+                                android:id="@+id/tvNetSignal"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="—"
+                                android:textSize="13sp"
+                                android:textColor="@color/on_surface"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvNetRate"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="—"
+                                android:textSize="13sp"
+                                android:textColor="@color/on_surface"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="8dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="类型"
+                                android:textSize="10sp"
+                                android:textColor="@color/on_surface_variant" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="运营商"
+                                android:textSize="10sp"
+                                android:textColor="@color/on_surface_variant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="2dp">
+
+                            <TextView
+                                android:id="@+id/tvNetDetail"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="—"
+                                android:textSize="13sp"
+                                android:textColor="@color/on_surface"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvNetCarrier"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="—"
+                                android:textSize="13sp"
+                                android:textColor="@color/on_surface"
+                                android:textStyle="bold"
+                                android:maxLines="1"
+                                android:ellipsize="end" />
                         </LinearLayout>
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>

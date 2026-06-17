@@ -25,19 +25,29 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvCpuPercent: TextView
     private lateinit var tvCpuFreq: TextView
     private lateinit var tvMemUsed: TextView
-    private lateinit var tvMemTotal: TextView
     private lateinit var tvMemSystem: TextView
+    private lateinit var tvMemSystemPct: TextView
     private lateinit var tvMemApps: TextView
+    private lateinit var tvMemAppsPct: TextView
+    private lateinit var tvSwapCached: TextView
+    private lateinit var memRing: MemoryRingView
     private lateinit var tvBatteryPercent: TextView
     private lateinit var tvBatteryTemp: TextView
     private lateinit var tvBatteryStatus: TextView
+    private lateinit var tvBatteryPower: TextView
+    private lateinit var tvBatteryVoltage: TextView
+    private lateinit var tvBatteryCurrent: TextView
     private lateinit var tvStorageAvail: TextView
     private lateinit var tvStorageApps: TextView
     private lateinit var tvStorageMedia: TextView
     private lateinit var tvStorageSystem: TextView
     private lateinit var pbStorage: ProgressBar
     private lateinit var tvNetSpeed: TextView
-    private lateinit var tvNetType: TextView
+    private lateinit var tvNetTypeLabel: TextView
+    private lateinit var tvNetSignal: TextView
+    private lateinit var tvNetRate: TextView
+    private lateinit var tvNetDetail: TextView
+    private lateinit var tvNetCarrier: TextView
     private lateinit var tvUptime: TextView
     private lateinit var tvProcesses: TextView
     private lateinit var tvShizukuStatus: TextView
@@ -116,6 +126,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        AppLogger.init(this)
+        AppLogger.i("MainActivity onCreate")
+
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
 
         initViews()
@@ -137,6 +150,40 @@ class MainActivity : AppCompatActivity() {
         })
 
         setupShizuku()
+
+        // Auto-grant permissions via Shizuku when service is ready
+        autoGrantPermissions()
+    }
+
+    private fun autoGrantPermissions() {
+        Thread {
+            // Wait for Shizuku service
+            var wait = 0
+            while (!serviceReady && wait < 20) { Thread.sleep(500); wait++ }
+            if (!serviceReady) return@Thread
+
+            val pkg = packageName
+            val perms = listOf(
+                "android.permission.READ_PHONE_STATE",
+                "android.permission.ACCESS_FINE_LOCATION",
+                "android.permission.ACCESS_COARSE_LOCATION"
+            )
+            for (perm in perms) {
+                try {
+                    executeCommandSync("pm grant $pkg $perm")
+                } catch (_: Exception) {}
+                try {
+                    // Also use appops as fallback
+                    val op = when (perm) {
+                        "android.permission.READ_PHONE_STATE" -> "READ_PHONE_STATE"
+                        "android.permission.ACCESS_FINE_LOCATION" -> "COARSE_LOCATION"
+                        "android.permission.ACCESS_COARSE_LOCATION" -> "COARSE_LOCATION"
+                        else -> continue
+                    }
+                    executeCommandSync("appops set $pkg $op allow")
+                } catch (_: Exception) {}
+            }
+        }.start()
     }
 
     private fun updateAll() {
@@ -157,19 +204,49 @@ class MainActivity : AppCompatActivity() {
         tvCpuPercent = findViewById(R.id.tvCpuPercent)
         tvCpuBigPercent = findViewById(R.id.tvCpuBigPercent)
         tvMemUsed = findViewById(R.id.tvMemUsed)
-        tvMemTotal = findViewById(R.id.tvMemTotal)
         tvMemSystem = findViewById(R.id.tvMemSystem)
+        tvMemSystemPct = findViewById(R.id.tvMemSystemPct)
         tvMemApps = findViewById(R.id.tvMemApps)
+        tvMemAppsPct = findViewById(R.id.tvMemAppsPct)
+        tvSwapCached = findViewById(R.id.tvSwapCached)
+        memRing = findViewById(R.id.memRing)
         tvBatteryPercent = findViewById(R.id.tvBatteryPercent)
         tvBatteryTemp = findViewById(R.id.tvBatteryTemp)
         tvBatteryStatus = findViewById(R.id.tvBatteryStatus)
+        tvBatteryPower = findViewById(R.id.tvBatteryPower)
+        tvBatteryVoltage = findViewById(R.id.tvBatteryVoltage)
+        tvBatteryCurrent = findViewById(R.id.tvBatteryCurrent)
         tvStorageAvail = findViewById(R.id.tvStorageAvail)
         tvStorageApps = findViewById(R.id.tvStorageApps)
         tvStorageMedia = findViewById(R.id.tvStorageMedia)
         tvStorageSystem = findViewById(R.id.tvStorageSystem)
         pbStorage = findViewById(R.id.pbStorage)
         tvNetSpeed = findViewById(R.id.tvNetSpeed)
-        tvNetType = findViewById(R.id.tvNetType)
+        tvNetTypeLabel = findViewById(R.id.tvNetTypeLabel)
+        tvNetSignal = findViewById(R.id.tvNetSignal)
+        tvNetRate = findViewById(R.id.tvNetRate)
+        tvNetDetail = findViewById(R.id.tvNetDetail)
+        tvNetCarrier = findViewById(R.id.tvNetCarrier)
+
+        tvNetCarrier.setOnLongClickListener {
+            val input = android.widget.EditText(this)
+            input.setText(prefs.getString("carrier_name", ""))
+            input.hint = "运营商名称（留空自动检测）"
+            android.app.AlertDialog.Builder(this)
+                .setTitle("设置运营商")
+                .setView(input)
+                .setPositiveButton("确定") { _, _ ->
+                    prefs.edit().putString("carrier_name", input.text.toString().trim()).apply()
+                    updateNetworkInfo()
+                }
+                .setNeutralButton("清除") { _, _ ->
+                    prefs.edit().remove("carrier_name").apply()
+                    updateNetworkInfo()
+                }
+                .setNegativeButton("取消", null)
+                .show()
+            true
+        }
         tvUptime = findViewById(R.id.tvUptime)
         tvProcesses = findViewById(R.id.tvProcesses)
         tvShizukuStatus = findViewById(R.id.tvRootStatus)
@@ -268,6 +345,62 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, ToolboxActivity::class.java))
             overridePendingTransition(R.anim.scale_in, 0)
         }
+        findViewById<ImageView>(R.id.btnSettings).setOnClickListener { showSettingsDialog() }
+        
+        // 启动小米超级岛监控服务
+        startIslandService()
+    }
+    
+    private fun startIslandService() {
+        try {
+            val intent = Intent(this, IslandService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start IslandService", e)
+        }
+    }
+
+    private fun showSettingsDialog() {
+        val items = arrayOf("运行日志", "一键复制日志", "清除日志")
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("设置")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showLogViewer()
+                    1 -> copyLogs()
+                    2 -> { AppLogger.clear(); Toast.makeText(this, "日志已清除", Toast.LENGTH_SHORT).show() }
+                }
+            }
+            .show()
+    }
+
+    private fun showLogViewer() {
+        val sv = android.widget.ScrollView(this).apply { setPadding(32, 16, 32, 16) }
+        val tv = android.widget.TextView(this).apply {
+            text = AppLogger.getAll().ifEmpty { "暂无日志" }
+            textSize = 11f
+            setTextColor(getColor(R.color.on_surface))
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextIsSelectable(true)
+        }
+        sv.addView(tv)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("运行日志")
+            .setView(sv)
+            .setPositiveButton("关闭", null)
+            .setNeutralButton("复制") { _, _ -> copyLogs() }
+            .show()
+    }
+
+    private fun copyLogs() {
+        val log = AppLogger.getAll()
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("logs", log))
+        Toast.makeText(this, "日志已复制到剪贴板", Toast.LENGTH_SHORT).show()
     }
 
     private fun detectCpuModel() {
@@ -426,6 +559,9 @@ class MainActivity : AppCompatActivity() {
             val lines = memFile.readLines()
             val memTotalLine = lines.firstOrNull { it.startsWith("MemTotal") }
             val memAvailLine = lines.firstOrNull { it.startsWith("MemAvailable") }
+            val swapTotalLine = lines.firstOrNull { it.startsWith("SwapTotal") }
+            val swapFreeLine = lines.firstOrNull { it.startsWith("SwapFree") }
+            val swapCachedLine = lines.firstOrNull { it.startsWith("SwapCached") }
 
             if (memTotalLine == null || memAvailLine == null) {
                 Log.w(TAG, "Could not find MemTotal or MemAvailable")
@@ -434,22 +570,26 @@ class MainActivity : AppCompatActivity() {
 
             val memTotal = memTotalLine.split("\\s+".toRegex())[1].toLong()
             val memAvail = memAvailLine.split("\\s+".toRegex())[1].toLong()
-            val memUsed = memTotal - memAvail
-            val totalGB = String.format("%.1f", memTotal / 1048576.0)
-            val usedGB = String.format("%.1f", memUsed / 1048576.0)
-            val usagePercent = (memUsed * 100 / memTotal).toInt()
-            val systemPercent = (usagePercent * 0.15).toInt()
-            val appsPercent = (usagePercent * 0.85).toInt()
+            val swapTotal = swapTotalLine?.split("\\s+".toRegex())?.getOrNull(1)?.toLongOrNull() ?: 0L
+            val swapFree = swapFreeLine?.split("\\s+".toRegex())?.getOrNull(1)?.toLongOrNull() ?: 0L
+            val swapCached = swapCachedLine?.split("\\s+".toRegex())?.getOrNull(1)?.toLongOrNull() ?: 0L
 
-            Log.d(TAG, "Memory: $usedGB/$totalGB GB ($usagePercent%)")
+            val physPct = ((memTotal - memAvail) * 100 / memTotal).toInt()
+            val swapPct = if (swapTotal > 0) ((swapTotal - swapFree) * 100 / swapTotal).toInt() else 0
+            val usedPct = physPct + swapPct
+
+            Log.d(TAG, "Mem: total=$memTotal avail=$memAvail physPct=$physPct swapPct=$swapPct usedPct=$usedPct")
 
             runOnUiThread {
-                tvMemUsed.text = "$usedGB GB"
-                tvMemTotal.text = " / $totalGB GB"
-                tvMemSystem.text = "${String.format("%.1f", memTotal * 0.15 / 1048576.0)} GB"
-                tvMemApps.text = "${String.format("%.1f", memUsed * 0.85 / 1048576.0)} GB"
-                pbMemSystem.progress = systemPercent
-                pbMemApps.progress = appsPercent
+                tvMemUsed.text = "$usedPct%"
+                tvMemSystem.text = String.format("%.1f GB", memTotal / 1048576.0)
+                tvMemSystemPct.text = " ($physPct%)"
+                tvMemApps.text = String.format("%.1f GB", swapTotal / 1048576.0)
+                tvMemAppsPct.text = " ($swapPct%)"
+                tvSwapCached.text = String.format("%d MB", swapCached / 1024)
+                memRing.setProgress(usedPct)
+                pbMemSystem.progress = physPct
+                pbMemApps.progress = swapPct
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update memory info", e)
@@ -463,10 +603,18 @@ class MainActivity : AppCompatActivity() {
             val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             val temp = batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0
             val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, 0) ?: 0
+            val voltage = batteryIntent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
+            val currentNow = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+            val currentMA = if (currentNow != Int.MIN_VALUE) currentNow / 1000 else 0
+            val absCurrent = kotlin.math.abs(currentMA)
+            val powerW = absCurrent * voltage / 1000000.0
 
             runOnUiThread {
                 tvBatteryPercent.text = "$level"
                 tvBatteryTemp.text = "${temp / 10}°C"
+                tvBatteryPower.text = String.format("%.1f W", powerW)
+                tvBatteryVoltage.text = String.format("%.3f V", voltage / 1000.0)
+                tvBatteryCurrent.text = "${absCurrent} mA"
                 tvBatteryStatus.text = when (status) {
                     BatteryManager.BATTERY_STATUS_CHARGING -> "充电中"
                     BatteryManager.BATTERY_STATUS_DISCHARGING -> "放电中"
@@ -527,13 +675,103 @@ class MainActivity : AppCompatActivity() {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
             val activeNetwork = cm.activeNetwork
             val caps = cm.getNetworkCapabilities(activeNetwork)
-            val netType = when {
-                caps == null -> "无网络"
-                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "WiFi"
-                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "移动数据"
-                else -> "其他"
+            val isWifi = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+            val isCellular = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
+
+            val tm = getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+            var carrier = ""
+            try {
+                val simOp = tm.simOperator ?: ""
+                carrier = when (simOp) {
+                    "46000", "46002", "46007", "46008" -> "中国移动"
+                    "46001", "46006", "46009" -> "中国联通"
+                    "46003", "46005", "46011" -> "中国电信"
+                    "46015" -> "中国广电"
+                    else -> tm.networkOperatorName ?: ""
+                }
+            } catch (_: Exception) {
+                carrier = tm.networkOperatorName ?: ""
             }
-            runOnUiThread { tvNetType.text = netType }
+            if (carrier.isEmpty()) carrier = prefs.getString("carrier_name", "") ?: ""
+
+            var signalText = "—"
+            var rateText = "—"
+            var detailText = "—"
+            var typeLabel = ""
+
+            if (isWifi) {
+                try {
+                    val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+                    val info = wm.connectionInfo
+                    signalText = "${info.rssi} dBm"
+                    rateText = "${info.linkSpeed} Mbps"
+
+                    // WiFi type detection
+                    val standard = if (android.os.Build.VERSION.SDK_INT >= 30) info.wifiStandard else 0
+                    val freq = info.frequency
+                    val speed = info.linkSpeed
+
+                    detailText = when {
+                        standard == 7 -> "WiFi 7"
+                        standard == 6 -> "WiFi 6E"
+                        standard == 5 -> "WiFi 6"
+                        standard == 3 -> "WiFi 4"
+                        // standard == 4 or 0: might be WiFi 5/6/7, use frequency + speed
+                        freq > 5900 && speed > 500 -> "WiFi 7"  // 6GHz
+                        freq > 4900 && speed > 500 -> "WiFi 7"  // 5GHz + high speed
+                        freq > 4900 -> "WiFi 6"  // 5GHz, moderate speed
+                        freq > 2400 -> "WiFi 4"
+                        else -> "WiFi"
+                    }
+                    typeLabel = detailText
+                    carrier = "WiFi"
+                } catch (_: Exception) {
+                    detailText = "WiFi"; typeLabel = "WiFi"
+                }
+            } else if (isCellular) {
+                try {
+                    val networkType = try { tm.dataNetworkType } catch (_: Exception) { 0 }
+                    detailText = when (networkType) {
+                        android.telephony.TelephonyManager.NETWORK_TYPE_NR -> "5G NR"
+                        android.telephony.TelephonyManager.NETWORK_TYPE_LTE -> "4G LTE"
+                        android.telephony.TelephonyManager.NETWORK_TYPE_HSDPA,
+                        android.telephony.TelephonyManager.NETWORK_TYPE_HSUPA,
+                        android.telephony.TelephonyManager.NETWORK_TYPE_HSPAP,
+                        android.telephony.TelephonyManager.NETWORK_TYPE_UMTS -> "3G"
+                        android.telephony.TelephonyManager.NETWORK_TYPE_EDGE,
+                        android.telephony.TelephonyManager.NETWORK_TYPE_GPRS -> "2G"
+                        else -> "移动数据"
+                    }
+                    typeLabel = detailText
+
+                    try {
+                        val cellInfo = tm.allCellInfo
+                        if (cellInfo != null) {
+                            for (ci in cellInfo) {
+                                if (ci.isRegistered) {
+                                    signalText = "${ci.cellSignalStrength.dbm} dBm"
+                                    break
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+
+                    val downKbps = caps?.getLinkDownstreamBandwidthKbps() ?: 0
+                    if (downKbps > 0) rateText = if (downKbps >= 1000) "${downKbps / 1000} Mbps" else "${downKbps} Kbps"
+                } catch (_: Exception) {
+                    detailText = "移动数据"; typeLabel = "移动数据"
+                }
+            } else {
+                detailText = "无网络"; typeLabel = "无网络"
+            }
+
+            runOnUiThread {
+                tvNetTypeLabel.text = typeLabel
+                tvNetSignal.text = signalText
+                tvNetRate.text = rateText
+                tvNetDetail.text = detailText
+                tvNetCarrier.text = carrier.ifEmpty { "—" }
+            }
         } catch (_: Exception) {}
 
         try {

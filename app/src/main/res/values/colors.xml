@@ -5,6 +5,7 @@
 
     <!-- Obsidian System Colors -->
     <color name="background">#FF131313</color>
+    <color name="on_background">#FFE5E2E1</color>
     <color name="surface">#FF131313</color>
     <color name="surface_dim">#FF131313</color>
     <color name="surface_bright">#FF393939</color>

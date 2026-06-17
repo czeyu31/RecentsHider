@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:fitsSystemWindows="false">
+
+    <com.example.hiderecents.HeartView
+        android:id="@+id/heartView"
+        android:layout_width="220dp"
+        android:layout_height="220dp"
+        android:layout_gravity="center" />
+
+    <!-- 粒子在爱心上层，可以覆盖爱心 -->
+    <com.example.hiderecents.ParticleView
+        android:id="@+id/particleView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="100dp"
+        android:text="扫描中..."
+        android:textColor="#E2E2E2"
+        android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/tvDeviceName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="135dp"
+        android:textColor="#72d4ef"
+        android:textSize="13sp" />
+
+</FrameLayout>

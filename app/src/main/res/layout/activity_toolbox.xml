@@ -58,7 +58,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:columnCount="3"
-            android:rowCount="2">
+            android:rowCount="3">
 
             <!-- ADB 命令 -->
             <LinearLayout
@@ -139,6 +139,90 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="历史通知"
+                    android:textSize="12sp"
+                    android:textColor="@color/on_surface_variant"
+                    android:layout_marginTop="8dp" />
+            </LinearLayout>
+
+            <!-- 文件中转站 -->
+            <LinearLayout
+                android:id="@+id/toolFileTransfer"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="12dp">
+
+                <ImageView
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@drawable/ic_storage"
+                    android:background="@drawable/bg_tool_icon_primary"
+                    android:padding="12dp"
+                    android:contentDescription="file transfer"
+                    app:tint="@color/primary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="文件中转"
+                    android:textSize="12sp"
+                    android:textColor="@color/on_surface_variant"
+                    android:layout_marginTop="8dp" />
+            </LinearLayout>
+
+            <!-- APK 安装器 -->
+            <LinearLayout
+                android:id="@+id/toolApkInstaller"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="12dp">
+
+                <ImageView
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@drawable/ic_apk_install"
+                    android:background="@drawable/bg_tool_icon_tertiary"
+                    android:padding="12dp"
+                    android:contentDescription="apk installer"
+                    app:tint="@color/tertiary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="APK安装"
+                    android:textSize="12sp"
+                    android:textColor="@color/on_surface_variant"
+                    android:layout_marginTop="8dp" />
+            </LinearLayout>
+
+            <!-- 心率监测 -->
+            <LinearLayout
+                android:id="@+id/toolHeartRate"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="12dp">
+
+                <ImageView
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@drawable/ic_heart"
+                    android:background="@drawable/bg_tool_icon_primary"
+                    android:padding="12dp"
+                    android:contentDescription="heart rate"
+                    app:tint="@color/primary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="心率监测"
                     android:textSize="12sp"
                     android:textColor="@color/on_surface_variant"
                     android:layout_marginTop="8dp" />
