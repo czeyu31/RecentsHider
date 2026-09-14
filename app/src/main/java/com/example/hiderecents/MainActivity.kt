@@ -6,6 +6,7 @@ import android.content.*
 import android.content.pm.PackageManager
 import android.net.TrafficStats
 import android.os.*
+import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.widget.*
@@ -155,6 +156,40 @@ class MainActivity : AppCompatActivity() {
 
         // Auto-grant permissions via Shizuku when service is ready
         autoGrantPermissions()
+
+        // 确保无障碍守护服务在运行
+        ensureAccessibilityKeepAlive()
+    }
+
+    private fun ensureAccessibilityKeepAlive() {
+        Thread {
+            var wait = 0
+            while (!serviceReady && wait < 20) { Thread.sleep(500); wait++ }
+            if (!serviceReady) return@Thread
+            // 通过 Shizuku 确保守护无障碍服务被启用
+            val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+            val myCn = "$packageName/${AccessibilityKeepAliveService::class.java.name}"
+            if (!enabled.contains(myCn)) {
+                val newValue = if (enabled.isEmpty()) myCn else "$enabled:$myCn"
+                executeCommandSync("settings put secure enabled_accessibility_services $newValue")
+                executeCommandSync("settings put secure accessibility_enabled 1")
+                Log.d(TAG, "Re-enabled AccessibilityKeepAliveService")
+            }
+            // 主动触发一次恢复检查
+            val protectedServices = prefs.getStringSet("protected_a11y_services", emptySet()) ?: emptySet()
+            val userDisabled = prefs.getStringSet("user_disabled_a11y", emptySet()) ?: emptySet()
+            if (prefs.getBoolean("a11y_auto_protect", false) && protectedServices.isNotEmpty()) {
+                val current = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+                val currentSet = current.split(':').filter { it.isNotBlank() }.toSet()
+                val needRestore = protectedServices.filter { it !in currentSet && it !in userDisabled }
+                if (needRestore.isNotEmpty()) {
+                    val newValue = if (current.isEmpty()) needRestore.joinToString(":") else "$current:${needRestore.joinToString(":")}"
+                    executeCommandSync("settings put secure enabled_accessibility_services $newValue")
+                    executeCommandSync("settings put secure accessibility_enabled 1")
+                    Log.d(TAG, "MainActivity restored ${needRestore.size} accessibility services")
+                }
+            }
+        }.start()
     }
 
     private fun autoGrantPermissions() {
