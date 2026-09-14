@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background">
+
+    <!-- Top Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp">
+
+        <ImageView
+            android:id="@+id/btnBack"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:src="@drawable/ic_back"
+            android:contentDescription="back"
+            android:padding="6dp"
+            app:tint="@color/primary" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="无障碍管理"
+            android:textSize="18sp"
+            android:textColor="@color/primary"
+            android:textStyle="bold"
+            android:layout_marginStart="12dp" />
+
+        <TextView
+            android:id="@+id/tvAccessCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0 个服务"
+            android:textSize="12sp"
+            android:textColor="@color/on_surface_variant"
+            android:background="@drawable/bg_status_chip"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="4dp"
+            android:layout_marginEnd="8dp" />
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchHideSystem"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="仅用户"
+            android:textSize="11sp"
+            android:textColor="@color/on_surface_variant"
+            android:checked="false" />
+    </LinearLayout>
+
+    <!-- Search -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/searchLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="8dp"
+        app:boxBackgroundMode="outline"
+        app:boxCornerRadiusTopStart="8dp"
+        app:boxCornerRadiusTopEnd="8dp"
+        app:boxCornerRadiusBottomStart="8dp"
+        app:boxCornerRadiusBottomEnd="8dp"
+        app:boxStrokeColor="@color/outline_variant"
+        app:startIconDrawable="@android:drawable/ic_menu_search">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etSearch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="搜索应用或服务..."
+            android:textSize="14sp"
+            android:inputType="text" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- Info Card -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/bg_toolbox_panel"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="8dp"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="防回收保护"
+            android:textSize="14sp"
+            android:textColor="@color/on_surface"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvProtectStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="检测中..."
+            android:textSize="12sp"
+            android:textColor="@color/on_surface_variant"
+            android:layout_marginTop="4dp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switchAutoProtect"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="开启防回收（定期重新启用被关闭的无障碍服务）"
+            android:textSize="13sp"
+            android:textColor="@color/on_surface_variant"
+            android:layout_marginTop="8dp" />
+    </LinearLayout>
+
+    <!-- Service List Header -->
+    <TextView
+        android:id="@+id/tvListHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="已注册的无障碍服务"
+        android:textSize="13sp"
+        android:textColor="@color/on_surface_variant"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="8dp" />
+
+    <!-- Service List -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:paddingBottom="16dp" />
+</LinearLayout>

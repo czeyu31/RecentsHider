@@ -11,8 +11,8 @@ android {
         applicationId = "com.tools.systemtool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 192
-        versionName = "28.0"
+        versionCode = 199
+        versionName = "29.0"
     }
 
     buildTypes {

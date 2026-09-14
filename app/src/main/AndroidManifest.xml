@@ -3,6 +3,7 @@
 
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
@@ -10,6 +11,7 @@
     <uses-permission android:name="android.permission.BIND_QUICK_SETTINGS_TILE" />
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
@@ -65,10 +67,7 @@
         </activity>
         <activity android:name=".FilePickerActivity" />
         <activity android:name=".BatteryDetailActivity" />
-        <activity
-            android:name=".HeartRateActivity"
-            android:theme="@style/Theme.HeartRate"
-            android:screenOrientation="portrait" />
+        <activity android:name=".AccessibilityManageActivity" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -85,8 +84,16 @@
             android:exported="false" />
 
         <service
-            android:name=".IslandService"
-            android:exported="false" />
+            android:name=".AccessibilityKeepAliveService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_keepalive_config" />
+        </service>
 
         <service
             android:name=".NotificationListenerServiceImpl"

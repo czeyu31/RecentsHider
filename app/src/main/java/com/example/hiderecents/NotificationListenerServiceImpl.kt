@@ -17,11 +17,15 @@ class NotificationListenerServiceImpl : NotificationListenerService() {
 
         if (title.isEmpty() && text.isEmpty()) return
 
-        saveNotification(packageName, title, text, sbn.postTime)
+        // 检查该应用是否被排除
+        val prefs = getSharedPreferences("notification_history", Context.MODE_PRIVATE)
+        val excludedApps = prefs.getStringSet("notif_excluded_apps", emptySet()) ?: emptySet()
+        if (packageName in excludedApps) return
+
+        saveNotification(packageName, title, text, sbn.postTime, prefs)
     }
 
-    private fun saveNotification(packageName: String, title: String, text: String, time: Long) {
-        val prefs = getSharedPreferences("notification_history", Context.MODE_PRIVATE)
+    private fun saveNotification(packageName: String, title: String, text: String, time: Long, prefs: android.content.SharedPreferences) {
         val existing = prefs.getString("notifications", "[]") ?: "[]"
         val array = JSONArray(existing)
 

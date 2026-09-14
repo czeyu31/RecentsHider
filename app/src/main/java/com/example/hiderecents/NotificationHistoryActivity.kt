@@ -25,6 +25,7 @@ class NotificationHistoryActivity : AppCompatActivity() {
     private var notifications = mutableListOf<NotificationItem>()
     private var taskHideService: android.os.IBinder? = null
     private var serviceReady = false
+    private lateinit var prefs: android.content.SharedPreferences
 
     data class NotificationItem(
         val packageName: String,
@@ -50,18 +51,19 @@ class NotificationHistoryActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_notification_history)
 
+        prefs = getSharedPreferences("notification_history", Context.MODE_PRIVATE)
+
         recyclerView = findViewById(R.id.recyclerView)
         emptyState = findViewById(R.id.emptyState)
         tvPermissionWarning = findViewById(R.id.tvPermissionWarning)
 
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
         findViewById<ImageView>(R.id.btnClearAll).setOnClickListener { clearAllNotifications() }
+        findViewById<ImageView>(R.id.btnFilter).setOnClickListener { showFilterDialog() }
 
         recyclerView.layoutManager = LinearLayoutManager(this)
 
-        // Try to auto-grant notification permission
         autoGrantNotificationPermission()
-
         checkNotificationPermission()
         loadNotifications()
     }
@@ -123,7 +125,6 @@ class NotificationHistoryActivity : AppCompatActivity() {
 
         if (!hasPermission) {
             tvPermissionWarning.setOnClickListener {
-                // Open notification listener settings
                 try {
                     startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
                 } catch (_: Exception) {
@@ -137,8 +138,49 @@ class NotificationHistoryActivity : AppCompatActivity() {
         }
     }
 
+    private fun showFilterDialog() {
+        val excludedApps = prefs.getStringSet("notif_excluded_apps", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+
+        // 收集历史通知中出现过的所有应用
+        val historyPrefs = getSharedPreferences("notification_history", Context.MODE_PRIVATE)
+        val existing = historyPrefs.getString("notifications", "[]") ?: "[]"
+        val array = JSONArray(existing)
+        val appSet = mutableSetOf<String>()
+        for (i in 0 until array.length()) {
+            try {
+                appSet.add(array.getJSONObject(i).getString("packageName"))
+            } catch (_: Exception) {}
+        }
+
+        // 排序：未排除的在前
+        val sortedApps = appSet.sortedWith(compareBy<String> { it in excludedApps }.thenBy { it.lowercase() })
+        val pm = packageManager
+        val appLabels = sortedApps.map { pkg ->
+            try {
+                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+            } catch (_: Exception) { pkg }
+        }.toTypedArray()
+        val checkedItems = sortedApps.map { it !in excludedApps }.toBooleanArray()
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("通知记录筛选")
+            .setMultiChoiceItems(appLabels, checkedItems) { _, which, isChecked ->
+                val pkg = sortedApps[which]
+                if (isChecked) excludedApps.remove(pkg) else excludedApps.add(pkg)
+            }
+            .setPositiveButton("确定") { _, _ ->
+                prefs.edit().putStringSet("notif_excluded_apps", excludedApps).apply()
+                Toast.makeText(this, "筛选已更新", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .setNeutralButton("全选") { _, _ ->
+                prefs.edit().putStringSet("notif_excluded_apps", emptySet()).apply()
+                Toast.makeText(this, "已接收所有应用通知", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
     private fun loadNotifications() {
-        val prefs = getSharedPreferences("notification_history", Context.MODE_PRIVATE)
         val existing = prefs.getString("notifications", "[]") ?: "[]"
         val array = JSONArray(existing)
 
@@ -178,7 +220,6 @@ class NotificationHistoryActivity : AppCompatActivity() {
     }
 
     private fun clearAllNotifications() {
-        val prefs = getSharedPreferences("notification_history", Context.MODE_PRIVATE)
         prefs.edit().putString("notifications", "[]").apply()
         notifications.clear()
         recyclerView.adapter = null

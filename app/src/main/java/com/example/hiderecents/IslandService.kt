@@ -4,6 +4,7 @@ import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
@@ -21,7 +22,9 @@ class IslandService : Service() {
         super.onCreate()
         instance = this
         createNotificationChannel()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIFICATION_ID, buildNotification("监控服务运行中"), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForeground(NOTIFICATION_ID, buildNotification("监控服务运行中"))
         }
         startMonitoring()
@@ -37,7 +40,7 @@ class IslandService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(CHANNEL_ID, "系统监控", NotificationManager.IMPORTANCE_LOW)
-            channel.description = "实时显示电池、温度、心率信息"
+            channel.description = "实时显示电池、温度信息"
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
@@ -64,8 +67,7 @@ class IslandService : Service() {
             while (instance != null) {
                 try {
                     val batteryInfo = getBatteryInfo()
-                    val heartRate = getHeartRate()
-                    updateNotification("$batteryInfo | 心率: ${heartRate}bpm")
+                    updateNotification(batteryInfo)
                     Thread.sleep(1000)
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -90,10 +92,5 @@ class IslandService : Service() {
         } catch (e: Exception) {
             return "电量:未知"
         }
-    }
-
-    private fun getHeartRate(): Int {
-        // 从HeartRateActivity获取心率数据
-        return HeartRateActivity.currentHeartRate
     }
 }

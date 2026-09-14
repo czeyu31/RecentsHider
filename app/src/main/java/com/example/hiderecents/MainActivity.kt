@@ -1,6 +1,7 @@
 package com.example.hiderecents
 
 import android.animation.ObjectAnimator
+import android.app.PendingIntent
 import android.content.*
 import android.content.pm.PackageManager
 import android.net.TrafficStats
@@ -9,6 +10,7 @@ import android.util.Log
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationCompat
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.File
@@ -183,6 +185,16 @@ class MainActivity : AppCompatActivity() {
                     executeCommandSync("appops set $pkg $op allow")
                 } catch (_: Exception) {}
             }
+
+            // 后台保活：禁止系统限制本应用后台运行
+            try {
+                executeCommandSync("cmd appops set $pkg RUN_IN_BACKGROUND allow")
+                executeCommandSync("cmd appops set $pkg RUN_ANY_IN_BACKGROUND allow")
+                executeCommandSync("cmd appops set $pkg START_FOREGROUND allow")
+                executeCommandSync("cmd appops set $pkg WAKE_LOCK allow")
+                executeCommandSync("dumpsys deviceidle whitelist +$pkg")
+                Log.d(TAG, "Background keepalive permissions granted")
+            } catch (_: Exception) {}
         }.start()
     }
 
@@ -193,6 +205,7 @@ class MainActivity : AppCompatActivity() {
         try { updateStorageInfo() } catch (e: Exception) { Log.e(TAG, "Storage error", e) }
         try { updateNetworkInfo() } catch (e: Exception) { Log.e(TAG, "Net error", e) }
         try { updateSystemInfo() } catch (e: Exception) { Log.e(TAG, "System error", e) }
+        try { updateStatusNotification() } catch (e: Exception) { Log.e(TAG, "Notif error", e) }
         refreshCounter++
         // Refresh top apps every cycle (3 seconds)
         Thread { loadTopApps() }.start()
@@ -346,9 +359,32 @@ class MainActivity : AppCompatActivity() {
             overridePendingTransition(R.anim.scale_in, 0)
         }
         findViewById<ImageView>(R.id.btnSettings).setOnClickListener { showSettingsDialog() }
-        
-        // 启动小米超级岛监控服务
-        startIslandService()
+
+        // 应用隐藏后台卡片设置
+        applyExcludeFromRecents(prefs.getBoolean("hide_from_recents", false))
+    }
+
+    private val swipeGestureDetector by lazy {
+        android.view.GestureDetector(this, object : android.view.GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(e1: android.view.MotionEvent?, e2: android.view.MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (e1 == null) return false
+                val diffX = e2.x - e1.x
+                val diffY = e2.y - e1.y
+                if (kotlin.math.abs(diffX) > kotlin.math.abs(diffY) && kotlin.math.abs(diffX) > 80 && kotlin.math.abs(velocityX) > 80) {
+                    if (diffX < 0) {
+                        startActivity(Intent(this@MainActivity, AccessibilityManageActivity::class.java))
+                        overridePendingTransition(R.anim.slide_left, 0)
+                        return true
+                    }
+                }
+                return false
+            }
+        })
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        swipeGestureDetector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
     }
     
     private fun startIslandService() {
@@ -365,7 +401,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSettingsDialog() {
-        val items = arrayOf("运行日志", "一键复制日志", "清除日志")
+        val hideFromRecents = prefs.getBoolean("hide_from_recents", false)
+        val showNotification = prefs.getBoolean("show_status_notification", false)
+        val items = arrayOf(
+            "运行日志", "一键复制日志", "清除日志",
+            if (hideFromRecents) "✓ 隐藏后台卡片" else "隐藏后台卡片",
+            if (showNotification) "✓ 状态通知" else "状态通知"
+        )
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle("设置")
             .setItems(items) { _, which ->
@@ -373,9 +415,88 @@ class MainActivity : AppCompatActivity() {
                     0 -> showLogViewer()
                     1 -> copyLogs()
                     2 -> { AppLogger.clear(); Toast.makeText(this, "日志已清除", Toast.LENGTH_SHORT).show() }
+                    3 -> {
+                        val newValue = !hideFromRecents
+                        prefs.edit().putBoolean("hide_from_recents", newValue).apply()
+                        applyExcludeFromRecents(newValue)
+                        Toast.makeText(this, if (newValue) "已开启隐藏后台卡片" else "已关闭隐藏后台卡片", Toast.LENGTH_SHORT).show()
+                    }
+                    4 -> {
+                        val newValue = !showNotification
+                        prefs.edit().putBoolean("show_status_notification", newValue).apply()
+                        updateStatusNotification()
+                        Toast.makeText(this, if (newValue) "已开启状态通知" else "已关闭状态通知", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
             .show()
+    }
+
+    private val notifChannelId = "system_tool_status"
+    private val notifId = 4001
+
+    private fun updateStatusNotification() {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        if (!prefs.getBoolean("show_status_notification", false)) {
+            nm.cancel(notifId)
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(notifChannelId, "状态通知", android.app.NotificationManager.IMPORTANCE_LOW)
+            channel.description = "显示隐藏和保活状态"
+            channel.setShowBadge(false)
+            nm.createNotificationChannel(channel)
+        }
+
+        val hiddenApps = prefs.getStringSet("hidden_apps", emptySet()) ?: emptySet()
+        val protectedServices = prefs.getStringSet("protected_a11y_services", emptySet()) ?: emptySet()
+        val userDisabled = prefs.getStringSet("user_disabled_a11y", emptySet()) ?: emptySet()
+        val activeProtected = protectedServices.count { it !in userDisabled }
+
+        val text = buildString {
+            append("已隐藏 ${hiddenApps.size} 个应用")
+            if (activeProtected > 0) append(" · 保活 $activeProtected 个无障碍服务")
+        }
+
+        val intent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+        val notification = NotificationCompat.Builder(this, notifChannelId)
+            .setContentTitle("System Tool")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_settings)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            nm.notify(notifId, notification)
+        } else {
+            nm.notify(notifId, notification)
+        }
+    }
+
+    private fun applyExcludeFromRecents(exclude: Boolean) {
+        try {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                val tasks = am.appTasks
+                for (task in tasks) {
+                    val info = task.taskInfo
+                    if (info.topActivity?.packageName == packageName) {
+                        // 直接从最近任务列表中移除/恢复
+                        if (exclude) {
+                            task.setExcludeFromRecents(true)
+                        } else {
+                            task.setExcludeFromRecents(false)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "applyExcludeFromRecents failed", e)
+        }
     }
 
     private fun showLogViewer() {

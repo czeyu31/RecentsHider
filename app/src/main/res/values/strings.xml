@@ -18,4 +18,5 @@
     <string name="search_hint">搜索应用...</string>
     <string name="no_notifications">暂无通知记录</string>
     <string name="grant_notification_access">请授予通知访问权限以记录通知</string>
+    <string name="keepalive_description">无障碍保活守护服务：监控并自动恢复被系统关闭的无障碍服务，不收集任何用户数据。</string>
 </resources>

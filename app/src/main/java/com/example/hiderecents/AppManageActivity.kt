@@ -25,6 +25,7 @@ class AppManageActivity : AppCompatActivity() {
     private lateinit var tvHiddenCount: TextView
 
     private val hiddenApps = mutableSetOf<String>()
+    private val pinnedApps = mutableSetOf<String>()
     private var shizukuPermissionGranted = false
     private var taskHideService: IBinder? = null
     private var serviceReady = false
@@ -32,7 +33,7 @@ class AppManageActivity : AppCompatActivity() {
     private var currentQuery = ""
     private var hideSystemApps = true
 
-    data class AppItem(val packageName: String, val appName: String, val icon: Drawable?, val isHidden: Boolean, val isSystem: Boolean = false)
+    data class AppItem(val packageName: String, val appName: String, val icon: Drawable?, val isHidden: Boolean, val isSystem: Boolean = false, val isPinned: Boolean = false)
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -61,6 +62,7 @@ class AppManageActivity : AppCompatActivity() {
 
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         hiddenApps.addAll(prefs.getStringSet("hidden_apps", emptySet()) ?: emptySet())
+        pinnedApps.addAll(prefs.getStringSet("pinned_apps", emptySet()) ?: emptySet())
 
         etSearch = findViewById(R.id.etSearch)
         tvHiddenCount = findViewById(R.id.tvHiddenCount)
@@ -78,7 +80,8 @@ class AppManageActivity : AppCompatActivity() {
         adapter = AppListAdapter(
             onToggle = { pkg, hide -> toggleAppVisibility(pkg, hide) },
             onUninstall = { pkg, name -> confirmUninstall(pkg, name) },
-            onLongPress = { app -> showAppDetail(app) }
+            onShowDetail = { app -> showAppDetail(app) },
+            onTogglePin = { app -> toggleAppPin(app) }
         )
         recyclerView.adapter = adapter
 
@@ -156,9 +159,9 @@ class AppManageActivity : AppCompatActivity() {
                             try {
                                 val appInfo = pm.getApplicationInfo(pkg, 0)
                                 val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-                                AppItem(pkg, pm.getApplicationLabel(appInfo).toString(), pm.getApplicationIcon(appInfo), hiddenApps.contains(pkg), isSystem)
+                                AppItem(pkg, pm.getApplicationLabel(appInfo).toString(), pm.getApplicationIcon(appInfo), hiddenApps.contains(pkg), isSystem, pinnedApps.contains(pkg))
                             } catch (_: Exception) { null }
-                        }.sortedWith(compareByDescending<AppItem> { it.isHidden }.thenBy { it.appName.lowercase() })
+                        }.sortedWith(compareByDescending<AppItem> { it.isPinned }.thenByDescending { it.isHidden }.thenBy { it.appName.lowercase() })
                         runOnUiThread { filterApps() }
                     } else {
                         runOnUiThread { loadInstalledAppsLocal() }
@@ -181,9 +184,9 @@ class AppManageActivity : AppCompatActivity() {
             .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
             .map {
                 val isSystem = (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-                AppItem(it.packageName, pm.getApplicationLabel(it).toString(), pm.getApplicationIcon(it), hiddenApps.contains(it.packageName), isSystem)
+                AppItem(it.packageName, pm.getApplicationLabel(it).toString(), pm.getApplicationIcon(it), hiddenApps.contains(it.packageName), isSystem, pinnedApps.contains(it.packageName))
             }
-            .sortedWith(compareByDescending<AppItem> { it.isHidden }.thenBy { it.appName.lowercase() })
+            .sortedWith(compareByDescending<AppItem> { it.isPinned }.thenByDescending { it.isHidden }.thenBy { it.appName.lowercase() })
         filterApps()
     }
 
@@ -238,6 +241,16 @@ class AppManageActivity : AppCompatActivity() {
             .setNeutralButton("卸载删除数据") { _, _ -> uninstallApp(packageName, true) }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    private fun toggleAppPin(app: AppItem) {
+        if (app.packageName in pinnedApps) {
+            pinnedApps.remove(app.packageName)
+        } else {
+            pinnedApps.add(app.packageName)
+        }
+        prefs.edit().putStringSet("pinned_apps", pinnedApps).apply()
+        loadInstalledApps()
     }
 
     private fun showAppDetail(app: AppItem) {
@@ -370,7 +383,8 @@ class AppManageActivity : AppCompatActivity() {
     inner class AppListAdapter(
         private val onToggle: (String, Boolean) -> Unit,
         private val onUninstall: (String, String) -> Unit,
-        private val onLongPress: (AppItem) -> Unit
+        private val onShowDetail: (AppItem) -> Unit,
+        private val onTogglePin: (AppItem) -> Unit
     ) : RecyclerView.Adapter<AppListAdapter.VH>() {
         private var appList = listOf<AppItem>()
         fun submitList(list: List<AppItem>) { appList = list; notifyDataSetChanged() }
@@ -389,7 +403,7 @@ class AppManageActivity : AppCompatActivity() {
             private val sw: com.google.android.material.materialswitch.MaterialSwitch = itemView.findViewById(R.id.switchHide)
 
             fun bind(app: AppItem) {
-                tvName.text = app.appName
+                tvName.text = if (app.isPinned) "📌 ${app.appName}" else app.appName
                 tvPkg.text = app.packageName
                 Glide.with(this@AppManageActivity).load(app.icon).into(ivIcon)
                 sw.setOnCheckedChangeListener(null)
@@ -397,7 +411,22 @@ class AppManageActivity : AppCompatActivity() {
                 sw.setOnCheckedChangeListener { _, isChecked -> onToggle(app.packageName, isChecked) }
                 ivUninstall.setOnClickListener { onUninstall(app.packageName, app.appName) }
                 itemView.setOnClickListener { sw.toggle() }
-                itemView.setOnLongClickListener { onLongPress(app); true }
+                itemView.isLongClickable = true
+                itemView.setOnLongClickListener {
+                    val isPinned = app.packageName in pinnedApps
+                    val items = arrayOf(if (isPinned) "取消置顶" else "置顶", "应用详情")
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this@AppManageActivity)
+                        .setTitle(app.appName)
+                        .setItems(items) { _, which ->
+                            when (which) {
+                                0 -> onTogglePin(app)
+                                1 -> onShowDetail(app)
+                            }
+                        }
+                        .setNegativeButton("关闭", null)
+                        .show()
+                    true
+                }
             }
         }
     }
