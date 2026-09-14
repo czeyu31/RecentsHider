@@ -115,6 +115,9 @@ class ApkInstallerActivity : AppCompatActivity() {
                         }
                     }
 
+                    // 把 .apk.1 等非标准后缀改为 .apk
+                    val normalizedFileName = fileName.replace(Regex("\\.apk\\.\\d+$", RegexOption.IGNORE_CASE), ".apk")
+
                     // Try to get real file path
                     realPath = getRealPathFromUri(uri)
 
@@ -124,7 +127,7 @@ class ApkInstallerActivity : AppCompatActivity() {
                         AppLogger.i("ApkInstaller: using real path: $realPath")
                     } else {
                         // Fallback: copy to cache
-                        val cacheFile = File(cacheDir, fileName)
+                        val cacheFile = File(cacheDir, normalizedFileName)
                         contentResolver.openInputStream(uri)?.use { input ->
                             val buffered = input.buffered()
                             cacheFile.outputStream().use { output ->

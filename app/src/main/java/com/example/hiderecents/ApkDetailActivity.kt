@@ -124,7 +124,9 @@ class ApkDetailActivity : AppCompatActivity() {
                         if (idx >= 0) fileName = it.getString(idx)
                     }
                 }
-                val cacheFile = File(cacheDir, fileName)
+                // 把 .apk.1 等非标准后缀改为 .apk，确保 getPackageArchiveInfo 能识别
+                val normalizedFileName = fileName.replace(Regex("\\.apk\\.\\d+$", RegexOption.IGNORE_CASE), ".apk")
+                val cacheFile = File(cacheDir, normalizedFileName)
                 val input = contentResolver.openInputStream(uri)
                 if (input == null) {
                     handler.post { Toast.makeText(this, "无法读取文件", Toast.LENGTH_SHORT).show() }
