@@ -8,11 +8,11 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.tools.systemtool.beta"
+        applicationId = "com.tools.systemtool"
         minSdk = 26
         targetSdk = 34
         versionCode = 201
-        versionName = "29.2-beta"
+        versionName = "29.2"
     }
 
     buildTypes {
