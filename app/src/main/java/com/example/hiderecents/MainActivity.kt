@@ -74,6 +74,13 @@ class MainActivity : AppCompatActivity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val refreshInterval = 3000L
+    private var monitoringActive = false
+    private val updateRunnable = object : Runnable {
+        override fun run() {
+            updateAll()
+            handler.postDelayed(this, refreshInterval)
+        }
+    }
 
     // Mix of vibrant and dark theme colors
 
@@ -144,17 +151,16 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = 0xFF131313.toInt()
         window.navigationBarColor = 0xFF131313.toInt()
 
-        // First immediate update
+        // First immediate update — 复用开屏期间预初始化的结果
         updateAll()
-        detectCpuModel()
+        if (AppInit.cpuModel != null) {
+            tvCpuModel.text = AppInit.cpuModel
+        } else {
+            detectCpuModel()
+        }
 
-        // All updates every 1s
-        handler.post(object : Runnable {
-            override fun run() {
-                updateAll()
-                handler.postDelayed(this, refreshInterval)
-            }
-        })
+        // All updates every 1s — will be paused when app goes to background
+        startMonitoring()
 
         setupShizuku()
 
@@ -335,6 +341,23 @@ class MainActivity : AppCompatActivity() {
         if (!Shizuku.pingBinder() || Shizuku.isPreV11()) {
             shizukuPermissionGranted = false
             serviceReady = false
+            updateShizukuStatus()
+            return
+        }
+        // 开屏期间 AppInit 已完成权限检查和绑定，直接复用
+        if (AppInit.shizukuPermissionGranted) {
+            shizukuPermissionGranted = true
+            if (AppInit.shizukuServiceBound && AppInit.taskHideService != null) {
+                // 服务已绑定，直接使用
+                taskHideService = AppInit.taskHideService
+                serviceReady = true
+                Log.d(TAG, "Shizuku service reused from AppInit")
+                updateShizukuStatus()
+                loadTopApps()
+                autoGrantAllPermissions()
+            } else {
+                bindShizukuService()
+            }
             updateShizukuStatus()
             return
         }
@@ -1415,10 +1438,27 @@ class MainActivity : AppCompatActivity() {
         tvHiddenStatus.text = "已隐藏 ${hiddenApps.size}"
     }
 
+    private fun startMonitoring() {
+        if (monitoringActive) return
+        monitoringActive = true
+        handler.post(updateRunnable)
+    }
+
+    private fun stopMonitoring() {
+        monitoringActive = false
+        handler.removeCallbacks(updateRunnable)
+    }
+
     override fun onResume() {
         super.onResume()
         updateHiddenCount()
         updateShizukuStatus()
+        startMonitoring()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopMonitoring()
     }
 
     override fun onDestroy() {
