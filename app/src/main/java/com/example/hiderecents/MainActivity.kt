@@ -22,6 +22,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "SystemTool"
+        private const val REQ_NOTIFICATION = 2001
     }
 
     private lateinit var prefs: SharedPreferences
@@ -84,6 +85,9 @@ class MainActivity : AppCompatActivity() {
     private var prevRxBytes: Long = 0
     private var prevTxBytes: Long = 0
     private var prevNetTime: Long = 0
+
+    private data class CachedApp(val packageName: String, val appName: String)
+    private var cachedLaunchableApps = listOf<CachedApp>()
 
     private var shizukuPermissionGranted = false
     private var taskHideService: IBinder? = null
@@ -436,35 +440,273 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSettingsDialog() {
-        val hideFromRecents = prefs.getBoolean("hide_from_recents", false)
-        val showNotification = prefs.getBoolean("show_status_notification", false)
-        val items = arrayOf(
-            "运行日志", "一键复制日志", "清除日志",
-            if (hideFromRecents) "✓ 隐藏后台卡片" else "隐藏后台卡片",
-            if (showNotification) "✓ 状态通知" else "状态通知"
-        )
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle("设置")
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> showLogViewer()
-                    1 -> copyLogs()
-                    2 -> { AppLogger.clear(); Toast.makeText(this, "日志已清除", Toast.LENGTH_SHORT).show() }
-                    3 -> {
-                        val newValue = !hideFromRecents
-                        prefs.edit().putBoolean("hide_from_recents", newValue).apply()
-                        applyExcludeFromRecents(newValue)
-                        Toast.makeText(this, if (newValue) "已开启隐藏后台卡片" else "已关闭隐藏后台卡片", Toast.LENGTH_SHORT).show()
-                    }
-                    4 -> {
-                        val newValue = !showNotification
-                        prefs.edit().putBoolean("show_status_notification", newValue).apply()
-                        updateStatusNotification()
-                        Toast.makeText(this, if (newValue) "已开启状态通知" else "已关闭状态通知", Toast.LENGTH_SHORT).show()
-                    }
-                }
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+
+        val layout = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(28), dp(12), dp(28), dp(24))
+            gravity = android.view.Gravity.CENTER_HORIZONTAL
+        }
+
+        layout.addView(createBellToggleItem(
+            "隐藏后台卡片", "已开启", false,
+            prefs.getBoolean("hide_from_recents", false)
+        ) { newValue ->
+            prefs.edit().putBoolean("hide_from_recents", newValue).apply()
+            applyExcludeFromRecents(newValue)
+        })
+
+        layout.addView(createBellToggleItem(
+            "状态通知", "已开启", true,
+            prefs.getBoolean("show_status_notification", false)
+        ) { newValue ->
+            if (newValue) toggleStatusNotification() else {
+                prefs.edit().putBoolean("show_status_notification", false).apply()
+                updateStatusNotification()
             }
+        })
+
+        layout.addView(createBellToggleItem(
+            "后台保活", "已开启", false,
+            prefs.getBoolean("keep_alive_enabled", false)
+        ) { newValue ->
+            if (newValue) showKeepAliveGuide() else {
+                prefs.edit().putBoolean("keep_alive_enabled", false).apply()
+                Toast.makeText(this, "已关闭后台保活", Toast.LENGTH_SHORT).show()
+            }
+        })
+
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("设置")
+            .setView(layout)
+            .create()
+        dialog.window?.setGravity(android.view.Gravity.CENTER)
+        dialog.show()
+    }
+
+    private fun createBellToggleItem(
+        offLabel: String,
+        onLabel: String,
+        showBell: Boolean,
+        initialOn: Boolean,
+        onToggle: (Boolean) -> Unit
+    ): android.widget.LinearLayout {
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(19), dp(12), dp(19), dp(12))
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(10) }
+        }
+
+        val bg = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(22).toFloat() }
+        container.background = bg
+
+        var iconView: android.widget.ImageView? = null
+        if (showBell) {
+            iconView = android.widget.ImageView(this).apply {
+                setImageResource(R.drawable.ic_bell)
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(9) }
+                imageTintList = android.content.res.ColorStateList.valueOf(0xFFFFFFFF.toInt())
+            }
+            container.addView(iconView)
+        }
+
+        val labelView = android.widget.TextView(this).apply {
+            textSize = 13.5f
+            typeface = android.graphics.Typeface.create(null, 500, false)
+            letterSpacing = 0.01f
+        }
+        container.addView(labelView)
+
+        val offColor = 0xFF27272A.toInt()
+        val onColor = 0xFFF5F5F5.toInt()
+        val offText = 0xFFF5F5F5.toInt()
+        val onText = 0xFF18181B.toInt()
+
+        var isOn = initialOn
+        var initDone = false
+
+        fun applyState(animate: Boolean) {
+            if (!animate || !initDone) {
+                bg.setColor(if (isOn) onColor else offColor)
+                labelView.text = if (isOn) onLabel else offLabel
+                labelView.setTextColor(if (isOn) onText else offText)
+                iconView?.imageTintList = android.content.res.ColorStateList.valueOf(if (isOn) onText else offText)
+                initDone = true
+                return
+            }
+            android.animation.ValueAnimator.ofArgb(
+                if (isOn) offColor else onColor,
+                if (isOn) onColor else offColor
+            ).apply {
+                duration = 200
+                addUpdateListener { bg.setColor(it.animatedValue as Int) }
+                start()
+            }
+            labelView.animate().alpha(0f).setDuration(80).withEndAction {
+                labelView.text = if (isOn) onLabel else offLabel
+                labelView.setTextColor(if (isOn) onText else offText)
+                labelView.animate().alpha(1f).setDuration(120).start()
+            }.start()
+            if (iconView != null) {
+                iconView.imageTintList = android.content.res.ColorStateList.valueOf(if (isOn) onText else offText)
+                swingBell(iconView)
+            }
+        }
+
+        applyState(false)
+
+        container.setOnClickListener {
+            isOn = !isOn
+            applyState(true)
+            onToggle(isOn)
+        }
+
+        return container
+    }
+
+    private fun swingBell(icon: android.widget.ImageView) {
+        icon.pivotX = icon.width / 2f
+        icon.pivotY = 0f
+        val amplitudes = floatArrayOf(17f, -12f, 8f, -5f, 2f, 0f)
+        val animator = android.animation.ObjectAnimator.ofFloat(icon, "rotation", *amplitudes)
+        animator.duration = 820
+        animator.interpolator = android.view.animation.LinearInterpolator()
+        animator.start()
+    }
+
+    private fun toggleStatusNotification() {
+        val currentlyOn = prefs.getBoolean("show_status_notification", false)
+        if (currentlyOn) {
+            prefs.edit().putBoolean("show_status_notification", false).apply()
+            updateStatusNotification()
+            Toast.makeText(this, "已关闭状态通知", Toast.LENGTH_SHORT).show()
+        } else {
+            // 先尝试请求通知权限，再开启
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                androidx.core.content.ContextCompat.checkSelfPermission(this,
+                    android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                pendingEnableNotification = true
+                handler.postDelayed({
+                    androidx.core.app.ActivityCompat.requestPermissions(
+                        this,
+                        arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                        REQ_NOTIFICATION
+                    )
+                }, 200)
+            } else {
+                enableStatusNotification()
+            }
+        }
+    }
+
+    private var pendingEnableNotification = false
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_NOTIFICATION && pendingEnableNotification) {
+            pendingEnableNotification = false
+            // 无论用户是否授权都开启状态通知
+            // 未授权时通知可能被系统静默，但功能不受影响
+            enableStatusNotification()
+            if (grantResults.isEmpty() || grantResults[0] != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "通知权限未授予，通知可能被系统静默", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun enableStatusNotification() {
+        prefs.edit().putBoolean("show_status_notification", true).apply()
+        updateStatusNotification()
+        Toast.makeText(this, "已开启状态通知", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showKeepAliveGuide() {
+        val keepAliveOn = prefs.getBoolean("keep_alive_enabled", false)
+        if (keepAliveOn) {
+            // Already on, offer to turn off
+            prefs.edit().putBoolean("keep_alive_enabled", false).apply()
+            Toast.makeText(this, "已关闭后台保活", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Turn on and show setup guide
+        prefs.edit().putBoolean("keep_alive_enabled", true).apply()
+
+        val message = buildString {
+            appendLine("后台保活已开启，请完成以下设置确保应用不被系统杀死：")
+            appendLine()
+            appendLine("① 关闭电池优化 — 点击「去设置」→ 找到本应用 → 选择「不限制」")
+            appendLine()
+            appendLine("② 允许自启动 — 系统设置中开启本应用的自启动权限")
+            appendLine()
+            appendLine("③ 锁定后台任务 — 在最近任务列表中，长按或下拉本应用卡片，点击锁定/加锁图标")
+        }
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("后台保活设置引导")
+            .setMessage(message)
+            .setPositiveButton("去设置电池优化") { _, _ ->
+                openBatteryOptimizationSettings()
+            }
+            .setNeutralButton("去设置自启动") { _, _ ->
+                openAutoStartSettings()
+            }
+            .setNegativeButton("我知道了", null)
             .show()
+    }
+
+    private fun openBatteryOptimizationSettings() {
+        try {
+            // Request to ignore battery optimization directly
+            val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+            intent.data = android.net.Uri.parse("package:$packageName")
+            startActivity(intent)
+        } catch (e: Exception) {
+            try {
+                // Fallback: open battery optimization list
+                startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (_: Exception) {
+                Toast.makeText(this, "无法打开电池优化设置，请手动在系统设置中关闭", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun openAutoStartSettings() {
+        // Try various OEM auto-start intents (MIUI, OPPO, VIVO, Huawei, etc.)
+        val intents = listOf(
+            // MIUI
+            Intent().setComponent(android.content.ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")),
+            // OPPO / ColorOS
+            Intent().setComponent(android.content.ComponentName("com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity")),
+            Intent().setComponent(android.content.ComponentName("com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity")),
+            // VIVO / OriginOS
+            Intent().setComponent(android.content.ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")),
+            // Huawei / EMUI
+            Intent().setComponent(android.content.ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")),
+            // Samsung
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName")),
+            // Generic app details as final fallback
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName"))
+        )
+
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                return
+            } catch (_: Exception) {}
+        }
+        // All failed — open general app settings
+        try {
+            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName")))
+        } catch (_: Exception) {
+            Toast.makeText(this, "无法打开自启动设置，请手动在系统设置中查找", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private val notifChannelId = "system_tool_status"
@@ -534,30 +776,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showLogViewer() {
-        val sv = android.widget.ScrollView(this).apply { setPadding(32, 16, 32, 16) }
-        val tv = android.widget.TextView(this).apply {
-            text = AppLogger.getAll().ifEmpty { "暂无日志" }
-            textSize = 11f
-            setTextColor(getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.MONOSPACE
-            setTextIsSelectable(true)
-        }
-        sv.addView(tv)
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle("运行日志")
-            .setView(sv)
-            .setPositiveButton("关闭", null)
-            .setNeutralButton("复制") { _, _ -> copyLogs() }
-            .show()
-    }
-
-    private fun copyLogs() {
-        val log = AppLogger.getAll()
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("logs", log))
-        Toast.makeText(this, "日志已复制到剪贴板", Toast.LENGTH_SHORT).show()
-    }
 
     private fun detectCpuModel() {
         Thread {
@@ -1049,7 +1267,7 @@ class MainActivity : AppCompatActivity() {
                             try {
                                 val appInfo = pm.getApplicationInfo(pkg, 0)
                                 val name = pm.getApplicationLabel(appInfo).toString()
-                                val icon = pm.getApplicationIcon(appInfo)
+                                val icon = loadIconCached(pm, pkg)
                                 appCpuList.add(Triple(name, cpuPercent, icon))
                             } catch (_: Exception) {}
                         }
@@ -1074,7 +1292,7 @@ class MainActivity : AppCompatActivity() {
                                     try {
                                         val appInfo = pm.getApplicationInfo(pkg, 0)
                                         val name = pm.getApplicationLabel(appInfo).toString()
-                                        val icon = pm.getApplicationIcon(appInfo)
+                                        val icon = loadIconCached(pm, pkg)
                                         appCpuList.add(Triple(name, percent, icon))
                                     } catch (_: Exception) {}
                                 }
@@ -1086,23 +1304,39 @@ class MainActivity : AppCompatActivity() {
 
             val topApps = appCpuList.sortedByDescending { it.second }.take(20)
 
-            val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            val launchable = packages.filter { pm.getLaunchIntentForPackage(it.packageName) != null }
-
-            if (topApps.isEmpty()) {
-                val fallback = launchable.take(20).map {
-                    Triple(pm.getApplicationLabel(it).toString(), 0f, pm.getApplicationIcon(it))
-                }
-                runOnUiThread { renderTopApps(fallback) }
-            } else {
-                val existingPkgs = topApps.map { it.first }.toSet()
-                val extras = launchable
-                    .filter { pm.getApplicationLabel(it).toString() !in existingPkgs }
-                    .take(20 - topApps.size)
-                    .map { Triple(pm.getApplicationLabel(it).toString(), 0f, pm.getApplicationIcon(it)) }
-                runOnUiThread { renderTopApps(topApps + extras) }
+            // Use cached launchable list to avoid repeated pm.getInstalledApplications
+            if (cachedLaunchableApps.isEmpty()) {
+                val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                cachedLaunchableApps = packages
+                    .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
+                    .map { CachedApp(it.packageName, pm.getApplicationLabel(it).toString()) }
             }
+
+            val result: List<Triple<String, Float, android.graphics.drawable.Drawable?>>
+            if (topApps.isEmpty()) {
+                result = cachedLaunchableApps.take(20).map {
+                    Triple(it.appName, 0f, loadIconCached(pm, it.packageName))
+                }
+            } else {
+                val existingNames = topApps.map { it.first }.toSet()
+                val extras = cachedLaunchableApps
+                    .filter { it.appName !in existingNames }
+                    .take(20 - topApps.size)
+                    .map { Triple(it.appName, 0f, loadIconCached(pm, it.packageName)) }
+                result = topApps + extras
+            }
+
+            runOnUiThread { renderTopApps(result) }
         } catch (_: Exception) {}
+    }
+
+    private fun loadIconCached(pm: PackageManager, packageName: String): android.graphics.drawable.Drawable? {
+        AppIconLoader.getCached(packageName)?.let { return it }
+        return try {
+            val icon = pm.getApplicationIcon(pm.getApplicationInfo(packageName, 0))
+            AppIconLoader.put(packageName, icon)
+            icon
+        } catch (_: Exception) { null }
     }
 
     private fun renderTopApps(apps: List<Triple<String, Float, android.graphics.drawable.Drawable?>>) {

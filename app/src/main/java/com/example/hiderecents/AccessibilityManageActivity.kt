@@ -41,7 +41,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
     private lateinit var tvProtectStatus: TextView
     private lateinit var tvListHeader: TextView
     private lateinit var etSearch: TextInputEditText
-    private lateinit var switchAutoProtect: com.google.android.material.materialswitch.MaterialSwitch
+    private lateinit var switchAutoProtect: SquishSwitch
 
     private var shizukuPermissionGranted = false
     private var taskHideService: IBinder? = null
@@ -113,7 +113,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
 
         switchAutoProtect.isChecked = prefs.getBoolean("a11y_auto_protect", false)
 
-        switchAutoProtect.setOnCheckedChangeListener { _, isChecked ->
+        switchAutoProtect.listener = { isChecked ->
             prefs.edit().putBoolean("a11y_auto_protect", isChecked).apply()
             if (isChecked) {
                 ensureKeepAliveEnabled()
@@ -276,7 +276,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
                         val cn = ComponentName(si.packageName, si.name).flattenToString()
                         val appInfo = pm.getApplicationInfo(si.packageName, 0)
                         val appName = pm.getApplicationLabel(appInfo).toString()
-                        val icon = pm.getApplicationIcon(appInfo)
+                        val icon = loadIconCached(pm, si.packageName)
                         val isEnabled = cn in currentEnabled
                         val desc = info.description?.toString() ?: ""
                         val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
@@ -305,6 +305,15 @@ class AccessibilityManageActivity : AppCompatActivity() {
                 Log.e(TAG, "Failed to load accessibility services", e)
             }
         }.start()
+    }
+
+    private fun loadIconCached(pm: PackageManager, packageName: String): android.graphics.drawable.Drawable? {
+        AppIconLoader.getCached(packageName)?.let { return it }
+        return try {
+            val icon = pm.getApplicationIcon(pm.getApplicationInfo(packageName, 0))
+            AppIconLoader.put(packageName, icon)
+            icon
+        } catch (_: Exception) { null }
     }
 
     private fun filterAndDisplay() {
@@ -470,7 +479,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
             private val tvServiceName: TextView = itemView.findViewById(R.id.tvServiceName)
             private val tvDescription: TextView = itemView.findViewById(R.id.tvDescription)
             private val tvStatus: TextView = itemView.findViewById(R.id.tvStatus)
-            private val sw: com.google.android.material.materialswitch.MaterialSwitch = itemView.findViewById(R.id.switchEnabled)
+            private val sw: SquishSwitch = itemView.findViewById(R.id.switchEnabled)
 
             fun bind(item: AccessibilityItem) {
                 tvAppName.text = if (item.isPinned) "📌 ${item.appName}" else item.appName
@@ -491,9 +500,9 @@ class AccessibilityManageActivity : AppCompatActivity() {
                 tvStatus.text = statusText
                 tvStatus.setTextColor(getColor(if (item.isProtected) R.color.primary else R.color.on_surface_variant))
 
-                sw.setOnCheckedChangeListener(null)
+                sw.listener = null
                 sw.isChecked = item.isEnabled
-                sw.setOnCheckedChangeListener { _, isChecked -> onToggle(item, isChecked) }
+                sw.listener = { isChecked -> onToggle(item, isChecked) }
                 ivIcon.setOnClickListener { sw.toggle() }
                 itemView.setOnClickListener { sw.toggle() }
                 itemView.setOnLongClickListener { onShowItemMenu(item); true }

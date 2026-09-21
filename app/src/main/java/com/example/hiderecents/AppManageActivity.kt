@@ -159,7 +159,7 @@ class AppManageActivity : AppCompatActivity() {
                             try {
                                 val appInfo = pm.getApplicationInfo(pkg, 0)
                                 val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-                                AppItem(pkg, pm.getApplicationLabel(appInfo).toString(), pm.getApplicationIcon(appInfo), hiddenApps.contains(pkg), isSystem, pinnedApps.contains(pkg))
+                                AppItem(pkg, pm.getApplicationLabel(appInfo).toString(), loadIconCached(pm, pkg), hiddenApps.contains(pkg), isSystem, pinnedApps.contains(pkg))
                             } catch (_: Exception) { null }
                         }.sortedWith(compareByDescending<AppItem> { it.isPinned }.thenByDescending { it.isHidden }.thenBy { it.appName.lowercase() })
                         runOnUiThread { filterApps() }
@@ -184,10 +184,19 @@ class AppManageActivity : AppCompatActivity() {
             .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
             .map {
                 val isSystem = (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-                AppItem(it.packageName, pm.getApplicationLabel(it).toString(), pm.getApplicationIcon(it), hiddenApps.contains(it.packageName), isSystem, pinnedApps.contains(it.packageName))
+                AppItem(it.packageName, pm.getApplicationLabel(it).toString(), loadIconCached(pm, it.packageName), hiddenApps.contains(it.packageName), isSystem, pinnedApps.contains(it.packageName))
             }
             .sortedWith(compareByDescending<AppItem> { it.isPinned }.thenByDescending { it.isHidden }.thenBy { it.appName.lowercase() })
         filterApps()
+    }
+
+    private fun loadIconCached(pm: PackageManager, packageName: String): android.graphics.drawable.Drawable? {
+        AppIconLoader.getCached(packageName)?.let { return it }
+        return try {
+            val icon = pm.getApplicationIcon(pm.getApplicationInfo(packageName, 0))
+            AppIconLoader.put(packageName, icon)
+            icon
+        } catch (_: Exception) { null }
     }
 
     private fun filterApps() {
@@ -400,15 +409,15 @@ class AppManageActivity : AppCompatActivity() {
             private val tvName: TextView = itemView.findViewById(R.id.tvAppName)
             private val tvPkg: TextView = itemView.findViewById(R.id.tvPackageName)
             private val ivUninstall: ImageView = itemView.findViewById(R.id.ivUninstall)
-            private val sw: com.google.android.material.materialswitch.MaterialSwitch = itemView.findViewById(R.id.switchHide)
+            private val sw: SquishSwitch = itemView.findViewById(R.id.switchHide)
 
             fun bind(app: AppItem) {
                 tvName.text = if (app.isPinned) "📌 ${app.appName}" else app.appName
                 tvPkg.text = app.packageName
                 Glide.with(this@AppManageActivity).load(app.icon).into(ivIcon)
-                sw.setOnCheckedChangeListener(null)
+                sw.listener = null
                 sw.isChecked = hiddenApps.contains(app.packageName)
-                sw.setOnCheckedChangeListener { _, isChecked -> onToggle(app.packageName, isChecked) }
+                sw.listener = { isChecked -> onToggle(app.packageName, isChecked) }
                 ivUninstall.setOnClickListener { onUninstall(app.packageName, app.appName) }
                 itemView.setOnClickListener { sw.toggle() }
                 itemView.isLongClickable = true

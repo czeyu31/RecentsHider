@@ -58,7 +58,7 @@
             android:layout_marginEnd="8dp"
             app:tint="@color/error" />
 
-        <com.google.android.material.materialswitch.MaterialSwitch
+        <com.example.hiderecents.SquishSwitch
             android:id="@+id/switchHide"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content" />
