@@ -6,7 +6,6 @@
     android:orientation="vertical"
     android:background="@color/background">
 
-    <!-- Top Bar -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="56dp"
@@ -14,90 +13,33 @@
         android:gravity="center_vertical"
         android:paddingHorizontal="16dp">
 
-        <ImageView
-            android:id="@+id/btnBack"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:src="@drawable/ic_back"
-            android:contentDescription="back"
-            android:padding="6dp"
-            app:tint="@color/primary" />
+        <ImageView android:id="@+id/btnBack" android:layout_width="36dp" android:layout_height="36dp"
+            android:src="@drawable/ic_back" android:padding="6dp" android:background="@drawable/bg_icon_circle"
+            app:tint="@color/on_surface" />
 
-        <TextView
-            android:id="@+id/tvTitle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="选择 APK 文件"
-            android:textSize="18sp"
-            android:textColor="@color/primary"
-            android:textStyle="bold"
-            android:layout_marginStart="12dp" />
+        <TextView android:id="@+id/tvTitle" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="选择文件" android:textSize="18sp" android:textColor="@color/on_surface"
+            android:fontFamily="sans-serif-medium" android:layout_marginStart="12dp" />
 
-        <TextView
-            android:id="@+id/tvSelectAll"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="全选"
-            android:textSize="14sp"
-            android:textColor="@color/primary"
-            android:padding="8dp"
-            android:clickable="true"
-            android:focusable="true" />
+        <TextView android:id="@+id/tvSelectedCount" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="已选 0" android:textSize="12sp" android:textColor="@color/primary"
+            android:background="@drawable/bg_pill_primary" android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp" android:layout_marginEnd="8dp" />
+
+        <TextView android:id="@+id/tvSelectAll" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="全选" android:textSize="12sp" android:textColor="@color/primary"
+            android:layout_marginEnd="8dp" />
+
+        <Button android:id="@+id/btnConfirm" android:layout_width="wrap_content" android:layout_height="36dp"
+            android:text="确认" android:textSize="12sp" android:textColor="@color/on_primary"
+            android:background="@drawable/bg_gradient_primary" android:paddingHorizontal="14dp" />
     </LinearLayout>
 
-    <!-- Path bar -->
-    <TextView
-        android:id="@+id/tvPath"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="/storage/emulated/0"
-        android:textSize="12sp"
-        android:textColor="@color/on_surface_variant"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="8dp"
-        android:background="@color/surface_container_low"
-        android:singleLine="true"
-        android:ellipsize="start" />
+    <TextView android:id="@+id/tvPath" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="" android:textSize="12sp" android:textColor="@color/on_surface_variant"
+        android:fontFamily="monospace" android:paddingHorizontal="20dp" android:layout_marginBottom="4dp" />
 
-    <!-- File list -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/recyclerView"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:padding="8dp" />
-
-    <!-- Bottom bar -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:padding="12dp"
-        android:background="@color/surface_container_low">
-
-        <TextView
-            android:id="@+id/tvSelectedCount"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="已选择 0 个文件"
-            android:textSize="13sp"
-            android:textColor="@color/on_surface_variant" />
-
-        <TextView
-            android:id="@+id/btnConfirm"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:text="确认选择"
-            android:textSize="14sp"
-            android:textColor="@color/background"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:paddingHorizontal="20dp"
-            android:background="@drawable/bg_rounded_primary"
-            android:clickable="true"
-            android:focusable="true" />
-    </LinearLayout>
+    <androidx.recyclerview.widget.RecyclerView android:id="@+id/recyclerView"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:clipToPadding="false" android:paddingHorizontal="12dp" android:paddingBottom="24dp" />
 </LinearLayout>

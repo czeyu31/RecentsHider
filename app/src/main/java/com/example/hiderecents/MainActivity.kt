@@ -148,8 +148,8 @@ class MainActivity : AppCompatActivity() {
         initViews()
         setupButtons()
 
-        window.statusBarColor = 0xFF131313.toInt()
-        window.navigationBarColor = 0xFF131313.toInt()
+        window.statusBarColor = 0xFF08090C.toInt()
+        window.navigationBarColor = 0xFF08090C.toInt()
 
         // First immediate update — 复用开屏期间预初始化的结果
         updateAll()

@@ -2,12 +2,12 @@
     <string name="app_name">System Tool</string>
     <string name="hidden_count">已隐藏 %d 个应用</string>
     <string name="toolbox">工具箱</string>
-    <string name="adb_commands">ADB 命令</string>
-    <string name="notification_history">历史通知</string>
+    <string name="adb_commands">ADB 终端</string>
+    <string name="notification_history">通知记录</string>
     <string name="app_management">应用管理</string>
     <string name="app_detail">应用详情</string>
-    <string name="cpu_usage">处理器 CPU</string>
-    <string name="memory_usage">内存 RAM</string>
+    <string name="cpu_usage">处理器</string>
+    <string name="memory_usage">内存</string>
     <string name="storage">存储</string>
     <string name="battery">电池</string>
     <string name="network">网络</string>

@@ -1,139 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="20dp">
+    android:background="@drawable/bg_glass_card_strong"
+    android:padding="24dp">
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginBottom="16dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="16dp">
 
-        <ImageView
-            android:id="@+id/ivDetailIcon"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:scaleType="centerCrop" />
+        <ImageView android:id="@+id/ivDetailIcon" android:layout_width="48dp" android:layout_height="48dp" />
 
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:layout_marginStart="16dp">
-
-            <TextView
-                android:id="@+id/tvDetailAppName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="@color/on_surface" />
-
-            <TextView
-                android:id="@+id/tvDetailPackageName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="13sp"
-                android:textColor="@color/on_surface_variant"
-                android:layout_marginTop="2dp" />
-
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:layout_marginStart="14dp">
+            <TextView android:id="@+id/tvDetailAppName" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textSize="18sp" android:textColor="@color/on_surface" android:textStyle="bold" />
+            <TextView android:id="@+id/tvDetailPackageName" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textSize="12sp" android:textColor="@color/on_surface_variant" android:layout_marginTop="2dp" />
         </LinearLayout>
     </LinearLayout>
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/surface_variant"
-        android:layout_marginBottom="12dp" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:layout_marginBottom="16dp">
 
-    <TextView
-        android:id="@+id/tvDetailVersion"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="14sp"
-        android:textColor="@color/on_surface"
-        android:layout_marginBottom="8dp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="6dp">
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:text="Version" android:textSize="13sp" android:textColor="@color/on_surface_variant" />
+            <TextView android:id="@+id/tvDetailVersion" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textSize="13sp" android:textColor="@color/on_surface" />
+        </LinearLayout>
 
-    <TextView
-        android:id="@+id/tvDetailVersionCode"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="14sp"
-        android:textColor="@color/on_surface"
-        android:layout_marginBottom="8dp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="6dp">
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:text="Version Code" android:textSize="13sp" android:textColor="@color/on_surface_variant" />
+            <TextView android:id="@+id/tvDetailVersionCode" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textSize="13sp" android:textColor="@color/on_surface" />
+        </LinearLayout>
 
-    <TextView
-        android:id="@+id/tvDetailTargetSdk"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="14sp"
-        android:textColor="@color/on_surface"
-        android:layout_marginBottom="8dp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="6dp">
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:text="Target SDK" android:textSize="13sp" android:textColor="@color/on_surface_variant" />
+            <TextView android:id="@+id/tvDetailTargetSdk" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textSize="13sp" android:textColor="@color/on_surface" />
+        </LinearLayout>
 
-    <TextView
-        android:id="@+id/tvDetailMinSdk"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="14sp"
-        android:textColor="@color/on_surface"
-        android:layout_marginBottom="12dp" />
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/surface_variant"
-        android:layout_marginBottom="12dp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="权限列表"
-        android:textSize="15sp"
-        android:textStyle="bold"
-        android:textColor="@color/on_surface"
-        android:layout_marginBottom="8dp" />
-
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="150dp"
-        android:layout_marginBottom="16dp">
-
-        <TextView
-            android:id="@+id/tvDetailPermissions"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:textColor="@color/on_surface_variant"
-            android:lineSpacingExtra="4dp" />
-    </ScrollView>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnExtractApk"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="提取APK"
-            android:layout_marginEnd="8dp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnOpenSettings"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="应用设置"
-            android:layout_marginStart="8dp" />
-
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="6dp">
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:text="Min SDK" android:textSize="13sp" android:textColor="@color/on_surface_variant" />
+            <TextView android:id="@+id/tvDetailMinSdk" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textSize="13sp" android:textColor="@color/on_surface" />
+        </LinearLayout>
     </LinearLayout>
 
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="Permissions" android:textSize="13sp" android:textColor="@color/on_surface_variant"
+        android:layout_marginBottom="4dp" />
+
+    <ScrollView android:layout_width="match_parent" android:layout_height="120dp"
+        android:background="@drawable/bg_glass_card" android:padding="10dp" android:layout_marginBottom="16dp">
+        <TextView android:id="@+id/tvDetailPermissions" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textSize="11sp" android:textColor="@color/on_surface_variant" android:fontFamily="monospace" />
+    </ScrollView>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <com.google.android.material.button.MaterialButton android:id="@+id/btnExtractApk"
+            android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1"
+            android:text="Extract APK" android:textSize="13sp" android:textColor="@color/on_primary"
+            android:backgroundTint="@color/primary" android:layout_marginEnd="6dp"
+            style="@style/Widget.Material3.Button" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/btnOpenSettings"
+            android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1"
+            android:text="Settings" android:textSize="13sp" android:textColor="@color/on_surface"
+            android:backgroundTint="@color/surface_container_high" android:layout_marginStart="6dp"
+            style="@style/Widget.Material3.Button.TonalButton" />
+    </LinearLayout>
 </LinearLayout>

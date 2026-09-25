@@ -32,7 +32,7 @@ class FoldTextView @JvmOverloads constructor(
     var staggerMs = 45L
     var perspective = 700f
     var creaseShading = 0.55f
-    var textColor = 0xFFB0C6FF.toInt()
+    var textColor = 0xFF6C9CFF.toInt()
     var textSizeSp = 26f
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)

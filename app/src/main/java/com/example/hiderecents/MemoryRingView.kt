@@ -17,17 +17,17 @@ class MemoryRingView @JvmOverloads constructor(
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = this@MemoryRingView.strokeWidth
-        color = 0xFF353535.toInt()
+        color = 0xFF242830.toInt()
     }
 
     private val fgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = this@MemoryRingView.strokeWidth
-        color = 0xFFB0C6FF.toInt()
+        color = 0xFF6C9CFF.toInt()
     }
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFC2C6D7.toInt()
+        color = 0xFF9CA3B4.toInt()
         textSize = 9f * resources.displayMetrics.scaledDensity
         textAlign = Paint.Align.CENTER
     }

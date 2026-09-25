@@ -16,7 +16,7 @@ class SplashActivity : AppCompatActivity() {
 
         // 纯黑背景
         val root = FrameLayout(this).apply {
-            setBackgroundColor(0xFF000000.toInt())
+            setBackgroundColor(0xFF08090C.toInt())
         }
 
         // FoldText 居中，白色大字

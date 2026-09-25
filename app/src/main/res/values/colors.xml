@@ -3,41 +3,68 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 
-    <!-- Obsidian System Colors -->
-    <color name="background">#FF131313</color>
-    <color name="on_background">#FFE5E2E1</color>
-    <color name="surface">#FF131313</color>
-    <color name="surface_dim">#FF131313</color>
-    <color name="surface_bright">#FF393939</color>
-    <color name="surface_container_lowest">#FF0E0E0E</color>
-    <color name="surface_container_low">#FF1C1B1B</color>
-    <color name="surface_container">#FF20201F</color>
-    <color name="surface_container_high">#FF2A2A2A</color>
-    <color name="surface_container_highest">#FF353535</color>
-    <color name="surface_variant">#FF353535</color>
+    <!-- Deep Space Dark Theme -->
+    <color name="background">#FF08090C</color>
+    <color name="on_background">#FFEAEDF3</color>
+    <color name="surface">#FF08090C</color>
+    <color name="surface_dim">#FF08090C</color>
+    <color name="surface_bright">#FF2A2D35</color>
+    <color name="surface_container_lowest">#FF06070A</color>
+    <color name="surface_container_low">#FF101218</color>
+    <color name="surface_container">#FF161920</color>
+    <color name="surface_container_high">#FF1C2028</color>
+    <color name="surface_container_highest">#FF242830</color>
+    <color name="surface_variant">#FF242830</color>
 
-    <color name="on_surface">#FFE5E2E1</color>
-    <color name="on_surface_variant">#FFC2C6D7</color>
-    <color name="outline">#FF8C90A0</color>
-    <color name="outline_variant">#FF424655</color>
+    <color name="on_surface">#FFEAEDF3</color>
+    <color name="on_surface_variant">#FF9CA3B4</color>
+    <color name="outline">#FF5A6278</color>
+    <color name="outline_variant">#FF2A2E3A</color>
 
-    <color name="primary">#FFB0C6FF</color>
-    <color name="on_primary">#FF002D6E</color>
-    <color name="primary_container">#FF558DFF</color>
-    <color name="on_primary_container">#FF002661</color>
+    <!-- Electric Blue Accent -->
+    <color name="primary">#FF6C9CFF</color>
+    <color name="on_primary">#FF002E6B</color>
+    <color name="primary_container">#FF1A4A8A</color>
+    <color name="on_primary_container">#FFA8CBFF</color>
 
-    <color name="secondary">#FFBDF4FF</color>
-    <color name="on_secondary">#FF00363D</color>
-    <color name="secondary_container">#FF00E3FD</color>
-    <color name="on_secondary_container">#FF00616D</color>
+    <!-- Cyan Accent -->
+    <color name="secondary">#FF4DD8D0</color>
+    <color name="on_secondary">#FF003735</color>
+    <color name="secondary_container">#FF1A4F4C</color>
+    <color name="on_secondary_container">#FF7FF5EC</color>
 
-    <color name="tertiary">#FFFFB692</color>
-    <color name="on_tertiary">#FF562000</color>
-    <color name="tertiary_container">#FFEB6A19</color>
-    <color name="on_tertiary_container">#FF4B1B00</color>
+    <!-- Warm Amber Accent -->
+    <color name="tertiary">#FFFFB74D</color>
+    <color name="on_tertiary">#FF4A2800</color>
+    <color name="tertiary_container">#FF6B3A00</color>
+    <color name="on_tertiary_container">#FFFFD4A0</color>
 
-    <color name="error">#FFFFB4AB</color>
+    <!-- Error -->
+    <color name="error">#FFFF6B6B</color>
     <color name="on_error">#FF690005</color>
     <color name="error_container">#FF93000A</color>
-    <color name="on_error_container">#FFFFDAD6</color>
+    <color name="on_error_container">#FFFFD4D4</color>
+
+    <!-- Gradient Colors -->
+    <color name="gradient_start">#FF4A7AFF</color>
+    <color name="gradient_end">#FF8B5CF6</color>
+    <color name="gradient_cyan_start">#FF06B6D4</color>
+    <color name="gradient_cyan_end">#FF22D3EE</color>
+    <color name="gradient_amber_start">#FFF59E0B</color>
+    <color name="gradient_amber_end">#FFFFB74D</color>
+    <color name="gradient_rose_start">#FFEC4899</color>
+    <color name="gradient_rose_end">#FFF472B6</color>
+    <color name="gradient_green_start">#FF4ADE80</color>
+    <color name="gradient_green_end">#FF86EFAC</color>
+
+    <!-- Glass Effect -->
+    <color name="glass_bg">#1AFFFFFF</color>
+    <color name="glass_border">#1AFFFFFF</color>
+    <color name="glass_bg_strong">#26FFFFFF</color>
+
+    <!-- Status Colors -->
+    <color name="status_online">#FF4ADE80</color>
+    <color name="status_warning">#FFFBBF24</color>
+    <color name="status_danger">#FFEF4444</color>
+    <color name="status_info">#FF60A5FA</color>
 </resources>

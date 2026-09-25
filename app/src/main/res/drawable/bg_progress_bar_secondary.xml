@@ -1,16 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:id="@android:id/background">
-        <shape>
-            <solid android:color="@color/surface_variant" />
-            <corners android:radius="4dp" />
+        <shape android:shape="rectangle">
+            <solid android:color="@color/surface_container_highest" />
+            <corners android:radius="100dp" />
         </shape>
     </item>
     <item android:id="@android:id/progress">
         <clip>
-            <shape>
-                <solid android:color="@color/secondary" />
-                <corners android:radius="4dp" />
+            <shape android:shape="rectangle">
+                <gradient
+                    android:startColor="@color/gradient_cyan_start"
+                    android:endColor="@color/gradient_cyan_end"
+                    android:angle="0" />
+                <corners android:radius="100dp" />
             </shape>
         </clip>
     </item>

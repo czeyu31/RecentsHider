@@ -26,10 +26,10 @@ class SquishSwitch @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     // --- Configurable properties ---
-    var trackColor = 0xFF353535.toInt()
-    var trackOnColor = 0xFF353535.toInt()
-    var thumbColor = 0xFF8C90A0.toInt()
-    var thumbOnColor = 0xFFB0C6FF.toInt()
+    var trackColor = 0xFF242830.toInt()
+    var trackOnColor = 0xFF242830.toInt()
+    var thumbColor = 0xFF5A6278.toInt()
+    var thumbOnColor = 0xFF6C9CFF.toInt()
     var colorDuration = 320L
     var speed = 50          // 0..100, controls spring stiffness
     var stretchAmount = 36  // 0..100, max squish intensity

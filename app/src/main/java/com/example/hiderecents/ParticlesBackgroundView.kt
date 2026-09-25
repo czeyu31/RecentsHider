@@ -52,9 +52,9 @@ class ParticlesBackgroundView @JvmOverloads constructor(
         pColors = IntArray(count)
 
         val palette = intArrayOf(
-            0x66FFFFFF.toInt(),
-            0x55B0C6FF.toInt(),
-            0x44BDF4FF.toInt()
+            0x55FFFFFF.toInt(),
+            0x446C9CFF.toInt(),
+            0x334DD8D0.toInt()
         )
 
         for (i in 0 until count) {

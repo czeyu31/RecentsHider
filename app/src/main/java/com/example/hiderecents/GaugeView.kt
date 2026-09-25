@@ -14,14 +14,14 @@ class GaugeView @JvmOverloads constructor(
     private val paintBg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 12f
-        color = Color.parseColor("#353535")
+        color = Color.parseColor("#242830")
         strokeCap = Paint.Cap.ROUND
     }
 
     private val paintFg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 12f
-        color = Color.parseColor("#558DFF")
+        color = Color.parseColor("#6C9CFF")
         strokeCap = Paint.Cap.ROUND
     }
 
@@ -34,14 +34,14 @@ class GaugeView @JvmOverloads constructor(
 
     private val paintUnit = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 24f
-        color = Color.parseColor("#C2C6D7")
+        color = Color.parseColor("#9CA3B4")
         textAlign = Paint.Align.CENTER
     }
 
     private var progress = 0f
     private var maxValue = 100f
     private var currentValue = 0f
-    private var accentColor = Color.parseColor("#558DFF")
+    private var accentColor = Color.parseColor("#6C9CFF")
 
     fun setAccentColor(color: Int) {
         accentColor = color

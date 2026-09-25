@@ -19,18 +19,18 @@
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:src="@drawable/ic_back"
-            android:contentDescription="back"
             android:padding="6dp"
-            app:tint="@color/primary" />
+            android:background="@drawable/bg_icon_circle"
+            app:tint="@color/on_surface" />
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="应用管理"
+            android:text="@string/app_management"
             android:textSize="18sp"
-            android:textColor="@color/primary"
-            android:textStyle="bold"
+            android:textColor="@color/on_surface"
+            android:fontFamily="sans-serif-medium"
             android:layout_marginStart="12dp" />
 
         <TextView
@@ -38,52 +38,55 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="已隐藏 0"
-            android:textSize="12sp"
-            android:textColor="@color/on_surface_variant"
-            android:background="@drawable/bg_status_chip"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="4dp"
-            android:layout_marginEnd="8dp" />
+            android:textSize="11sp"
+            android:textColor="@color/primary"
+            android:background="@drawable/bg_pill_primary"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp" />
+    </LinearLayout>
+
+    <!-- Search + Filter -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp"
+        android:layout_marginBottom="8dp">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etSearch"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:hint="@string/search_hint"
+            android:textSize="14sp"
+            android:textColor="@color/on_surface"
+            android:textColorHint="@color/on_surface_variant"
+            android:background="@drawable/bg_glass_card"
+            android:paddingHorizontal="16dp"
+            android:singleLine="true"
+            android:imeOptions="actionSearch"
+            android:inputType="text" />
 
         <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/switchHideSystem"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="隐藏系统"
+            android:text="系统"
             android:textSize="11sp"
             android:textColor="@color/on_surface_variant"
+            android:layout_marginStart="8dp"
             android:checked="true" />
     </LinearLayout>
-
-    <!-- Search -->
-    <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/searchLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingHorizontal="16dp"
-        android:paddingBottom="8dp"
-        app:boxBackgroundMode="outline"
-        app:boxCornerRadiusTopStart="8dp"
-        app:boxCornerRadiusTopEnd="8dp"
-        app:boxCornerRadiusBottomStart="8dp"
-        app:boxCornerRadiusBottomEnd="8dp"
-        app:boxStrokeColor="@color/outline_variant"
-        app:startIconDrawable="@android:drawable/ic_menu_search">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/etSearch"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="搜索应用..."
-            android:textSize="14sp"
-            android:inputType="text" />
-    </com.google.android.material.textfield.TextInputLayout>
 
     <!-- App List -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:clipToPadding="false"
-        android:paddingBottom="16dp" />
+        android:paddingHorizontal="12dp"
+        android:paddingBottom="24dp" />
 </LinearLayout>

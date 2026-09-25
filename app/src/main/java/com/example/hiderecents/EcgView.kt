@@ -117,7 +117,7 @@ class EcgView @JvmOverloads constructor(
         var x = 0f; while (x < w) { canvas.drawLine(x, 0f, x, h, gridPaint); x += 50f }
         var y = 0f; while (y < h) { canvas.drawLine(0f, y, w, y, gridPaint); y += 50f }
 
-        val gradient = LinearGradient(0f, 0f, w, 0f, 0xFFFF3366.toInt(), 0xFFFF88AA.toInt(), Shader.TileMode.CLAMP)
+        val gradient = LinearGradient(0f, 0f, w, 0f, 0xFFEC4899.toInt(), 0xFFF472B6.toInt(), Shader.TileMode.CLAMP)
         linePaint.shader = gradient
         glowPaint.shader = gradient; glowPaint.alpha = 50
 
