@@ -1,0 +1,1477 @@
+package com.example.hiderecents
+
+import android.animation.ObjectAnimator
+import android.app.PendingIntent
+import android.content.*
+import android.content.pm.PackageManager
+import android.net.TrafficStats
+import android.os.*
+import android.provider.Settings
+import android.util.Log
+import android.view.View
+import android.widget.*
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationCompat
+import rikka.shizuku.Shizuku
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStreamReader
+import java.io.RandomAccessFile
+
+class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "SystemTool"
+        private const val REQ_NOTIFICATION = 2001
+    }
+
+    private lateinit var prefs: SharedPreferences
+    private lateinit var tvCpuPercent: TextView
+    private lateinit var tvCpuFreq: TextView
+    private lateinit var tvMemUsed: TextView
+    private lateinit var tvMemSystem: TextView
+    private lateinit var tvMemSystemPct: TextView
+    private lateinit var tvMemApps: TextView
+    private lateinit var tvMemAppsPct: TextView
+    private lateinit var tvSwapCached: TextView
+    private lateinit var memRing: MemoryRingView
+    private lateinit var tvBatteryPercent: TextView
+    private lateinit var tvBatteryTemp: TextView
+    private lateinit var tvBatteryStatus: TextView
+    private lateinit var tvBatteryPower: TextView
+    private lateinit var tvBatteryVoltage: TextView
+    private lateinit var tvBatteryCurrent: TextView
+    private lateinit var tvStorageAvail: TextView
+    private lateinit var tvStorageApps: TextView
+    private lateinit var tvStorageMedia: TextView
+    private lateinit var tvStorageSystem: TextView
+    private lateinit var pbStorage: ProgressBar
+    private lateinit var tvNetSpeed: TextView
+    private lateinit var tvNetTypeLabel: TextView
+    private lateinit var tvNetSignal: TextView
+    private lateinit var tvNetRate: TextView
+    private lateinit var tvNetDetail: TextView
+    private lateinit var tvNetCarrier: TextView
+    private lateinit var tvUptime: TextView
+    private lateinit var tvProcesses: TextView
+    private lateinit var tvShizukuStatus: TextView
+    private lateinit var tvHealthStatus: TextView
+    private lateinit var tvHiddenStatus: TextView
+    private lateinit var pbMemSystem: ProgressBar
+    private lateinit var pbMemApps: ProgressBar
+    private lateinit var cpuProgress: ProgressBar
+    private lateinit var topAppsContainer: LinearLayout
+    private lateinit var topAppsScroll: ScrollView
+    private lateinit var rootLayout: View
+    private lateinit var topBar: LinearLayout
+    private lateinit var tvCpuModel: TextView
+    private lateinit var tvCpuBigPercent: TextView
+    private val coreTextViews = arrayOfNulls<TextView>(8)
+        private val coreProgressBars = arrayOfNulls<ProgressBar>(8)
+    private val prevCoreCpuIdle = LongArray(8)
+    private val prevCoreCpuTotal = LongArray(8)
+    private val coreInitialized = BooleanArray(8)
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val refreshInterval = 3000L
+    private var monitoringActive = false
+    private val updateRunnable = object : Runnable {
+        override fun run() {
+            updateAll()
+            handler.postDelayed(this, refreshInterval)
+        }
+    }
+
+    // Mix of vibrant and dark theme colors
+
+    private var prevTotalCpuIdle: Long = 0
+    private var prevTotalCpuTotal: Long = 0
+    private var cpuInitialized = false
+    private var topCpuUsage = -1
+    private var topRunning = false
+    private var prevRxBytes: Long = 0
+    private var prevTxBytes: Long = 0
+    private var prevNetTime: Long = 0
+
+    private data class CachedApp(val packageName: String, val appName: String)
+    private var cachedLaunchableApps = listOf<CachedApp>()
+
+    private var shizukuPermissionGranted = false
+    private var taskHideService: IBinder? = null
+    private var serviceReady = false
+    private var refreshCounter = 0
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, service: IBinder) {
+            taskHideService = service
+            serviceReady = true
+            Log.d(TAG, "Shizuku service connected")
+            updateShizukuStatus()
+            loadTopApps()
+            autoGrantAllPermissions()
+        }
+        override fun onServiceDisconnected(name: ComponentName) {
+            taskHideService = null
+            serviceReady = false
+            updateShizukuStatus()
+        }
+    }
+
+    private val shizukuPermissionResultListener =
+        Shizuku.OnRequestPermissionResultListener { _, grantResult ->
+            shizukuPermissionGranted = grantResult == PackageManager.PERMISSION_GRANTED
+            if (shizukuPermissionGranted) {
+                bindShizukuService()
+            }
+            updateShizukuStatus()
+        }
+
+    private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
+        checkShizukuPermission()
+    }
+    private val binderDeadListener = Shizuku.OnBinderDeadListener {
+        shizukuPermissionGranted = false
+        taskHideService = null
+        serviceReady = false
+        updateShizukuStatus()
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        AppLogger.init(this)
+        AppLogger.i("MainActivity onCreate")
+
+        prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
+
+        initViews()
+        setupButtons()
+
+        window.statusBarColor = 0xFF08090C.toInt()
+        window.navigationBarColor = 0xFF08090C.toInt()
+
+        // First immediate update — 复用开屏期间预初始化的结果
+        updateAll()
+        if (AppInit.cpuModel != null) {
+            tvCpuModel.text = AppInit.cpuModel
+        } else {
+            detectCpuModel()
+        }
+
+        // All updates every 1s — will be paused when app goes to background
+        startMonitoring()
+
+        setupShizuku()
+
+        // Auto-grant permissions via Shizuku when service is ready
+        autoGrantPermissions()
+
+        // 确保无障碍守护服务在运行
+        ensureAccessibilityKeepAlive()
+    }
+
+    private fun ensureAccessibilityKeepAlive() {
+        Thread {
+            var wait = 0
+            while (!serviceReady && wait < 20) { Thread.sleep(500); wait++ }
+            if (!serviceReady) return@Thread
+            // 通过 Shizuku 确保守护无障碍服务被启用
+            val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+            val myCn = "$packageName/${AccessibilityKeepAliveService::class.java.name}"
+            if (!enabled.contains(myCn)) {
+                val newValue = if (enabled.isEmpty()) myCn else "$enabled:$myCn"
+                executeCommandSync("settings put secure enabled_accessibility_services $newValue")
+                executeCommandSync("settings put secure accessibility_enabled 1")
+                Log.d(TAG, "Re-enabled AccessibilityKeepAliveService")
+            }
+            // 主动触发一次恢复检查
+            val protectedServices = prefs.getStringSet("protected_a11y_services", emptySet()) ?: emptySet()
+            val userDisabled = prefs.getStringSet("user_disabled_a11y", emptySet()) ?: emptySet()
+            if (prefs.getBoolean("a11y_auto_protect", false) && protectedServices.isNotEmpty()) {
+                val current = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+                val currentSet = current.split(':').filter { it.isNotBlank() }.toSet()
+                val needRestore = protectedServices.filter { it !in currentSet && it !in userDisabled }
+                if (needRestore.isNotEmpty()) {
+                    val newValue = if (current.isEmpty()) needRestore.joinToString(":") else "$current:${needRestore.joinToString(":")}"
+                    executeCommandSync("settings put secure enabled_accessibility_services $newValue")
+                    executeCommandSync("settings put secure accessibility_enabled 1")
+                    Log.d(TAG, "MainActivity restored ${needRestore.size} accessibility services")
+                }
+            }
+        }.start()
+    }
+
+    private fun autoGrantPermissions() {
+        Thread {
+            // Wait for Shizuku service
+            var wait = 0
+            while (!serviceReady && wait < 20) { Thread.sleep(500); wait++ }
+            if (!serviceReady) return@Thread
+
+            val pkg = packageName
+            val perms = listOf(
+                "android.permission.READ_PHONE_STATE",
+                "android.permission.ACCESS_FINE_LOCATION",
+                "android.permission.ACCESS_COARSE_LOCATION"
+            )
+            for (perm in perms) {
+                try {
+                    executeCommandSync("pm grant $pkg $perm")
+                } catch (_: Exception) {}
+                try {
+                    // Also use appops as fallback
+                    val op = when (perm) {
+                        "android.permission.READ_PHONE_STATE" -> "READ_PHONE_STATE"
+                        "android.permission.ACCESS_FINE_LOCATION" -> "COARSE_LOCATION"
+                        "android.permission.ACCESS_COARSE_LOCATION" -> "COARSE_LOCATION"
+                        else -> continue
+                    }
+                    executeCommandSync("appops set $pkg $op allow")
+                } catch (_: Exception) {}
+            }
+
+            // 后台保活：禁止系统限制本应用后台运行
+            try {
+                executeCommandSync("cmd appops set $pkg RUN_IN_BACKGROUND allow")
+                executeCommandSync("cmd appops set $pkg RUN_ANY_IN_BACKGROUND allow")
+                executeCommandSync("cmd appops set $pkg START_FOREGROUND allow")
+                executeCommandSync("cmd appops set $pkg WAKE_LOCK allow")
+                executeCommandSync("dumpsys deviceidle whitelist +$pkg")
+                Log.d(TAG, "Background keepalive permissions granted")
+            } catch (_: Exception) {}
+        }.start()
+    }
+
+    private fun updateAll() {
+        try { updateCpuInfo() } catch (e: Exception) { Log.e(TAG, "CPU error", e) }
+        try { updateMemoryInfo() } catch (e: Exception) { Log.e(TAG, "Mem error", e) }
+        try { updateBatteryInfo() } catch (e: Exception) { Log.e(TAG, "Battery error", e) }
+        try { updateStorageInfo() } catch (e: Exception) { Log.e(TAG, "Storage error", e) }
+        try { updateNetworkInfo() } catch (e: Exception) { Log.e(TAG, "Net error", e) }
+        try { updateSystemInfo() } catch (e: Exception) { Log.e(TAG, "System error", e) }
+        try { updateStatusNotification() } catch (e: Exception) { Log.e(TAG, "Notif error", e) }
+        refreshCounter++
+        // Refresh top apps every cycle (3 seconds)
+        Thread { loadTopApps() }.start()
+    }
+
+        private fun initViews() {
+        topBar = findViewById(R.id.topBar)
+        rootLayout = topBar.parent as View
+        tvCpuPercent = findViewById(R.id.tvCpuPercent)
+        tvCpuBigPercent = findViewById(R.id.tvCpuBigPercent)
+        tvMemUsed = findViewById(R.id.tvMemUsed)
+        tvMemSystem = findViewById(R.id.tvMemSystem)
+        tvMemSystemPct = findViewById(R.id.tvMemSystemPct)
+        tvMemApps = findViewById(R.id.tvMemApps)
+        tvMemAppsPct = findViewById(R.id.tvMemAppsPct)
+        tvSwapCached = findViewById(R.id.tvSwapCached)
+        memRing = findViewById(R.id.memRing)
+        tvBatteryPercent = findViewById(R.id.tvBatteryPercent)
+        tvBatteryTemp = findViewById(R.id.tvBatteryTemp)
+        tvBatteryStatus = findViewById(R.id.tvBatteryStatus)
+        tvBatteryPower = findViewById(R.id.tvBatteryPower)
+        tvBatteryVoltage = findViewById(R.id.tvBatteryVoltage)
+        tvBatteryCurrent = findViewById(R.id.tvBatteryCurrent)
+        tvStorageAvail = findViewById(R.id.tvStorageAvail)
+        tvStorageApps = findViewById(R.id.tvStorageApps)
+        tvStorageMedia = findViewById(R.id.tvStorageMedia)
+        tvStorageSystem = findViewById(R.id.tvStorageSystem)
+        pbStorage = findViewById(R.id.pbStorage)
+        tvNetSpeed = findViewById(R.id.tvNetSpeed)
+        tvNetTypeLabel = findViewById(R.id.tvNetTypeLabel)
+        tvNetSignal = findViewById(R.id.tvNetSignal)
+        tvNetRate = findViewById(R.id.tvNetRate)
+        tvNetDetail = findViewById(R.id.tvNetDetail)
+        tvNetCarrier = findViewById(R.id.tvNetCarrier)
+
+        tvNetCarrier.setOnLongClickListener {
+            val input = android.widget.EditText(this)
+            input.setText(prefs.getString("carrier_name", ""))
+            input.hint = "运营商名称（留空自动检测）"
+            android.app.AlertDialog.Builder(this)
+                .setTitle("设置运营商")
+                .setView(input)
+                .setPositiveButton("确定") { _, _ ->
+                    prefs.edit().putString("carrier_name", input.text.toString().trim()).apply()
+                    updateNetworkInfo()
+                }
+                .setNeutralButton("清除") { _, _ ->
+                    prefs.edit().remove("carrier_name").apply()
+                    updateNetworkInfo()
+                }
+                .setNegativeButton("取消", null)
+                .show()
+            true
+        }
+        tvUptime = findViewById(R.id.tvUptime)
+        tvProcesses = findViewById(R.id.tvProcesses)
+        tvShizukuStatus = findViewById(R.id.tvRootStatus)
+        tvHealthStatus = findViewById(R.id.tvHealthStatus)
+        tvHiddenStatus = findViewById(R.id.tvHiddenStatus)
+        pbMemSystem = findViewById(R.id.pbMemSystem)
+        pbMemApps = findViewById(R.id.pbMemApps)
+        cpuProgress = findViewById(R.id.cpuProgress)
+        topAppsContainer = findViewById(R.id.topAppsContainer)
+        topAppsScroll = findViewById(R.id.topAppsScroll)
+        tvCpuModel = findViewById(R.id.tvCpuModel)
+
+        // Find core views
+        val coreTextIds = arrayOf(R.id.tvCore0, R.id.tvCore1, R.id.tvCore2, R.id.tvCore3,
+            R.id.tvCore4, R.id.tvCore5, R.id.tvCore6, R.id.tvCore7)
+        val coreProgressIds = arrayOf(R.id.coreProgress0, R.id.coreProgress1, R.id.coreProgress2, R.id.coreProgress3,
+            R.id.coreProgress4, R.id.coreProgress5, R.id.coreProgress6, R.id.coreProgress7)
+        for (i in 0 until 8) {
+            coreTextViews[i] = findViewById(coreTextIds[i])
+            coreProgressBars[i] = findViewById(coreProgressIds[i])
+        }
+
+        updateHiddenCount()
+    }
+
+    private fun setupShizuku() {
+        Shizuku.addRequestPermissionResultListener(shizukuPermissionResultListener)
+        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
+        Shizuku.addBinderDeadListener(binderDeadListener)
+        checkShizukuPermission()
+    }
+
+    private fun checkShizukuPermission() {
+        if (!Shizuku.pingBinder() || Shizuku.isPreV11()) {
+            shizukuPermissionGranted = false
+            serviceReady = false
+            updateShizukuStatus()
+            return
+        }
+        // 开屏期间 AppInit 已完成权限检查和绑定，直接复用
+        if (AppInit.shizukuPermissionGranted) {
+            shizukuPermissionGranted = true
+            if (AppInit.shizukuServiceBound && AppInit.taskHideService != null) {
+                // 服务已绑定，直接使用
+                taskHideService = AppInit.taskHideService
+                serviceReady = true
+                Log.d(TAG, "Shizuku service reused from AppInit")
+                updateShizukuStatus()
+                loadTopApps()
+                autoGrantAllPermissions()
+            } else {
+                bindShizukuService()
+            }
+            updateShizukuStatus()
+            return
+        }
+        if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+            shizukuPermissionGranted = true
+            bindShizukuService()
+        } else {
+            Shizuku.requestPermission(1001)
+        }
+        updateShizukuStatus()
+    }
+
+    private fun bindShizukuService() {
+        try {
+            Shizuku.bindUserService(
+                Shizuku.UserServiceArgs(ComponentName(this, TaskHideService::class.java))
+                    .daemon(false).processNameSuffix("taskhide").debuggable(true).version(1),
+                serviceConnection
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to bind Shizuku service", e)
+        }
+    }
+
+    private fun updateShizukuStatus() {
+        runOnUiThread {
+            val status = when {
+                !Shizuku.pingBinder() -> "Shizuku 未运行"
+                !shizukuPermissionGranted -> "未授权"
+                !serviceReady -> "连接中..."
+                else -> "已连接"
+            }
+            val color = if (serviceReady && shizukuPermissionGranted) getColor(R.color.primary) else getColor(R.color.error)
+            tvShizukuStatus.text = status
+            tvShizukuStatus.setTextColor(color)
+        }
+    }
+
+    private fun autoGrantAllPermissions() {
+        if (!serviceReady) return
+        Thread {
+            try {
+                val componentName = ComponentName(this, NotificationListenerServiceImpl::class.java).flattenToString()
+                executeCommandSync("cmd notification allow_listener $componentName")
+                Log.d(TAG, "Auto-granted notification permission")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to auto-grant notification permission", e)
+            }
+            try {
+                executeCommandSync("appops set ${packageName} QUERY_ALL_PACKAGES allow")
+                Log.d(TAG, "Auto-granted QUERY_ALL_PACKAGES")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to auto-grant QUERY_ALL_PACKAGES", e)
+            }
+        }.start()
+    }
+
+    private fun setupButtons() {
+        findViewById<ImageView>(R.id.btnToolbox).setOnClickListener {
+            startActivity(Intent(this, ToolboxActivity::class.java))
+            overridePendingTransition(R.anim.scale_in, 0)
+        }
+        findViewById<ImageView>(R.id.btnSettings).setOnClickListener { showSettingsDialog() }
+
+        // 应用隐藏后台卡片设置
+        applyExcludeFromRecents(prefs.getBoolean("hide_from_recents", false))
+    }
+
+    private val swipeGestureDetector by lazy {
+        android.view.GestureDetector(this, object : android.view.GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(e1: android.view.MotionEvent?, e2: android.view.MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (e1 == null) return false
+                val diffX = e2.x - e1.x
+                val diffY = e2.y - e1.y
+                if (kotlin.math.abs(diffX) > kotlin.math.abs(diffY) && kotlin.math.abs(diffX) > 80 && kotlin.math.abs(velocityX) > 80) {
+                    if (diffX < 0) {
+                        startActivity(Intent(this@MainActivity, AccessibilityManageActivity::class.java))
+                        overridePendingTransition(R.anim.slide_left, 0)
+                        return true
+                    }
+                }
+                return false
+            }
+        })
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        swipeGestureDetector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+    
+    private fun startIslandService() {
+        try {
+            val intent = Intent(this, IslandService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start IslandService", e)
+        }
+    }
+
+    private fun showSettingsDialog() {
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+
+        val layout = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(28), dp(12), dp(28), dp(24))
+            gravity = android.view.Gravity.CENTER_HORIZONTAL
+        }
+
+        layout.addView(createBellToggleItem(
+            "隐藏后台卡片", "已开启", false,
+            prefs.getBoolean("hide_from_recents", false)
+        ) { newValue ->
+            prefs.edit().putBoolean("hide_from_recents", newValue).apply()
+            applyExcludeFromRecents(newValue)
+        })
+
+        layout.addView(createBellToggleItem(
+            "状态通知", "已开启", true,
+            prefs.getBoolean("show_status_notification", false)
+        ) { newValue ->
+            if (newValue) toggleStatusNotification() else {
+                prefs.edit().putBoolean("show_status_notification", false).apply()
+                updateStatusNotification()
+            }
+        })
+
+        layout.addView(createBellToggleItem(
+            "后台保活", "已开启", false,
+            prefs.getBoolean("keep_alive_enabled", false)
+        ) { newValue ->
+            if (newValue) showKeepAliveGuide() else {
+                prefs.edit().putBoolean("keep_alive_enabled", false).apply()
+                Toast.makeText(this, "已关闭后台保活", Toast.LENGTH_SHORT).show()
+            }
+        })
+
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("设置")
+            .setView(layout)
+            .create()
+        dialog.window?.setGravity(android.view.Gravity.CENTER)
+        dialog.show()
+    }
+
+    private fun createBellToggleItem(
+        offLabel: String,
+        onLabel: String,
+        showBell: Boolean,
+        initialOn: Boolean,
+        onToggle: (Boolean) -> Unit
+    ): android.widget.LinearLayout {
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(19), dp(12), dp(19), dp(12))
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(10) }
+        }
+
+        val bg = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(22).toFloat() }
+        container.background = bg
+
+        var iconView: android.widget.ImageView? = null
+        if (showBell) {
+            iconView = android.widget.ImageView(this).apply {
+                setImageResource(R.drawable.ic_bell)
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(9) }
+                imageTintList = android.content.res.ColorStateList.valueOf(0xFFFFFFFF.toInt())
+            }
+            container.addView(iconView)
+        }
+
+        val labelView = android.widget.TextView(this).apply {
+            textSize = 13.5f
+            typeface = android.graphics.Typeface.create(null, 500, false)
+            letterSpacing = 0.01f
+        }
+        container.addView(labelView)
+
+        val offColor = 0xFF27272A.toInt()
+        val onColor = 0xFFF5F5F5.toInt()
+        val offText = 0xFFF5F5F5.toInt()
+        val onText = 0xFF18181B.toInt()
+
+        var isOn = initialOn
+        var initDone = false
+
+        fun applyState(animate: Boolean) {
+            if (!animate || !initDone) {
+                bg.setColor(if (isOn) onColor else offColor)
+                labelView.text = if (isOn) onLabel else offLabel
+                labelView.setTextColor(if (isOn) onText else offText)
+                iconView?.imageTintList = android.content.res.ColorStateList.valueOf(if (isOn) onText else offText)
+                initDone = true
+                return
+            }
+            android.animation.ValueAnimator.ofArgb(
+                if (isOn) offColor else onColor,
+                if (isOn) onColor else offColor
+            ).apply {
+                duration = 200
+                addUpdateListener { bg.setColor(it.animatedValue as Int) }
+                start()
+            }
+            labelView.animate().alpha(0f).setDuration(80).withEndAction {
+                labelView.text = if (isOn) onLabel else offLabel
+                labelView.setTextColor(if (isOn) onText else offText)
+                labelView.animate().alpha(1f).setDuration(120).start()
+            }.start()
+            if (iconView != null) {
+                iconView.imageTintList = android.content.res.ColorStateList.valueOf(if (isOn) onText else offText)
+                swingBell(iconView)
+            }
+        }
+
+        applyState(false)
+
+        container.setOnClickListener {
+            isOn = !isOn
+            applyState(true)
+            onToggle(isOn)
+        }
+
+        return container
+    }
+
+    private fun swingBell(icon: android.widget.ImageView) {
+        icon.pivotX = icon.width / 2f
+        icon.pivotY = 0f
+        val amplitudes = floatArrayOf(17f, -12f, 8f, -5f, 2f, 0f)
+        val animator = android.animation.ObjectAnimator.ofFloat(icon, "rotation", *amplitudes)
+        animator.duration = 820
+        animator.interpolator = android.view.animation.LinearInterpolator()
+        animator.start()
+    }
+
+    private fun toggleStatusNotification() {
+        val currentlyOn = prefs.getBoolean("show_status_notification", false)
+        if (currentlyOn) {
+            prefs.edit().putBoolean("show_status_notification", false).apply()
+            updateStatusNotification()
+            Toast.makeText(this, "已关闭状态通知", Toast.LENGTH_SHORT).show()
+        } else {
+            // 先尝试请求通知权限，再开启
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                androidx.core.content.ContextCompat.checkSelfPermission(this,
+                    android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                pendingEnableNotification = true
+                handler.postDelayed({
+                    androidx.core.app.ActivityCompat.requestPermissions(
+                        this,
+                        arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                        REQ_NOTIFICATION
+                    )
+                }, 200)
+            } else {
+                enableStatusNotification()
+            }
+        }
+    }
+
+    private var pendingEnableNotification = false
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_NOTIFICATION && pendingEnableNotification) {
+            pendingEnableNotification = false
+            // 无论用户是否授权都开启状态通知
+            // 未授权时通知可能被系统静默，但功能不受影响
+            enableStatusNotification()
+            if (grantResults.isEmpty() || grantResults[0] != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "通知权限未授予，通知可能被系统静默", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun enableStatusNotification() {
+        prefs.edit().putBoolean("show_status_notification", true).apply()
+        updateStatusNotification()
+        Toast.makeText(this, "已开启状态通知", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showKeepAliveGuide() {
+        val keepAliveOn = prefs.getBoolean("keep_alive_enabled", false)
+        if (keepAliveOn) {
+            // Already on, offer to turn off
+            prefs.edit().putBoolean("keep_alive_enabled", false).apply()
+            Toast.makeText(this, "已关闭后台保活", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Turn on and show setup guide
+        prefs.edit().putBoolean("keep_alive_enabled", true).apply()
+
+        val message = buildString {
+            appendLine("后台保活已开启，请完成以下设置确保应用不被系统杀死：")
+            appendLine()
+            appendLine("① 关闭电池优化 — 点击「去设置」→ 找到本应用 → 选择「不限制」")
+            appendLine()
+            appendLine("② 允许自启动 — 系统设置中开启本应用的自启动权限")
+            appendLine()
+            appendLine("③ 锁定后台任务 — 在最近任务列表中，长按或下拉本应用卡片，点击锁定/加锁图标")
+        }
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("后台保活设置引导")
+            .setMessage(message)
+            .setPositiveButton("去设置电池优化") { _, _ ->
+                openBatteryOptimizationSettings()
+            }
+            .setNeutralButton("去设置自启动") { _, _ ->
+                openAutoStartSettings()
+            }
+            .setNegativeButton("我知道了", null)
+            .show()
+    }
+
+    private fun openBatteryOptimizationSettings() {
+        try {
+            // Request to ignore battery optimization directly
+            val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+            intent.data = android.net.Uri.parse("package:$packageName")
+            startActivity(intent)
+        } catch (e: Exception) {
+            try {
+                // Fallback: open battery optimization list
+                startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (_: Exception) {
+                Toast.makeText(this, "无法打开电池优化设置，请手动在系统设置中关闭", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun openAutoStartSettings() {
+        // Try various OEM auto-start intents (MIUI, OPPO, VIVO, Huawei, etc.)
+        val intents = listOf(
+            // MIUI
+            Intent().setComponent(android.content.ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")),
+            // OPPO / ColorOS
+            Intent().setComponent(android.content.ComponentName("com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity")),
+            Intent().setComponent(android.content.ComponentName("com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity")),
+            // VIVO / OriginOS
+            Intent().setComponent(android.content.ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")),
+            // Huawei / EMUI
+            Intent().setComponent(android.content.ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")),
+            // Samsung
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName")),
+            // Generic app details as final fallback
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName"))
+        )
+
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                return
+            } catch (_: Exception) {}
+        }
+        // All failed — open general app settings
+        try {
+            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName")))
+        } catch (_: Exception) {
+            Toast.makeText(this, "无法打开自启动设置，请手动在系统设置中查找", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private val notifChannelId = "system_tool_status"
+    private val notifId = 4001
+
+    private fun updateStatusNotification() {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        if (!prefs.getBoolean("show_status_notification", false)) {
+            nm.cancel(notifId)
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(notifChannelId, "状态通知", android.app.NotificationManager.IMPORTANCE_LOW)
+            channel.description = "显示隐藏和保活状态"
+            channel.setShowBadge(false)
+            nm.createNotificationChannel(channel)
+        }
+
+        val hiddenApps = prefs.getStringSet("hidden_apps", emptySet()) ?: emptySet()
+        val protectedServices = prefs.getStringSet("protected_a11y_services", emptySet()) ?: emptySet()
+        val userDisabled = prefs.getStringSet("user_disabled_a11y", emptySet()) ?: emptySet()
+        val activeProtected = protectedServices.count { it !in userDisabled }
+
+        val text = buildString {
+            append("已隐藏 ${hiddenApps.size} 个应用")
+            if (activeProtected > 0) append(" · 保活 $activeProtected 个无障碍服务")
+        }
+
+        val intent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+        val notification = NotificationCompat.Builder(this, notifChannelId)
+            .setContentTitle("System Tool")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_settings)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            nm.notify(notifId, notification)
+        } else {
+            nm.notify(notifId, notification)
+        }
+    }
+
+    private fun applyExcludeFromRecents(exclude: Boolean) {
+        try {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                val tasks = am.appTasks
+                for (task in tasks) {
+                    val info = task.taskInfo
+                    if (info.topActivity?.packageName == packageName) {
+                        // 直接从最近任务列表中移除/恢复
+                        if (exclude) {
+                            task.setExcludeFromRecents(true)
+                        } else {
+                            task.setExcludeFromRecents(false)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "applyExcludeFromRecents failed", e)
+        }
+    }
+
+
+    private fun detectCpuModel() {
+        Thread {
+            try {
+                var hardware = ""
+                var cpuModel = ""
+
+                // Read /proc/cpuinfo for model info
+                val cpuinfo = File("/proc/cpuinfo")
+                if (cpuinfo.exists()) {
+                    val lines = cpuinfo.readLines()
+                    hardware = lines.firstOrNull { it.startsWith("Hardware") }?.substringAfter(":")?.trim() ?: ""
+                    cpuModel = lines.firstOrNull { it.startsWith("model name") || it.startsWith("Processor") }?.substringAfter(":")?.trim() ?: ""
+                }
+
+                // Also try /proc/socinfo or properties
+                if (hardware.isEmpty()) {
+                    try {
+                        val process = Runtime.getRuntime().exec(arrayOf("getprop", "ro.soc.model"))
+                        val reader = BufferedReader(InputStreamReader(process.inputStream))
+                        hardware = reader.readLine()?.trim() ?: ""
+                        reader.close()
+                    } catch (_: Exception) {}
+                }
+                if (hardware.isEmpty()) {
+                    try {
+                        val process = Runtime.getRuntime().exec(arrayOf("getprop", "ro.hardware.chipname"))
+                        val reader = BufferedReader(InputStreamReader(process.inputStream))
+                        hardware = reader.readLine()?.trim() ?: ""
+                        reader.close()
+                    } catch (_: Exception) {}
+                }
+
+                // Detect core configuration
+                val cpuDir = File("/sys/devices/system/cpu/")
+                val cpuDirs = cpuDir.listFiles { f ->
+                    f.isDirectory && f.name.matches(Regex("cpu\\d+"))
+                }?.sortedBy { it.name.removePrefix("cpu").toIntOrNull() ?: 0 }
+
+                val coreCount = cpuDirs?.size ?: 0
+
+                // Group cores by max frequency to find clusters
+                val freqGroups = mutableMapOf<Long, Int>() // freq -> count
+                cpuDirs?.forEach { cpuDir ->
+                    try {
+                        val maxFreqFile = File(cpuDir, "cpufreq/cpuinfo_max_freq")
+                        if (maxFreqFile.exists()) {
+                            val maxFreq = maxFreqFile.readText().trim().toLongOrNull() ?: 0
+                            freqGroups[maxFreq] = (freqGroups[maxFreq] ?: 0) + 1
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                val clusterInfo = if (freqGroups.size >= 3) {
+                    val sorted = freqGroups.entries.sortedByDescending { it.key }
+                    "${sorted[0].value}+${sorted[1].value}+${sorted[2].value}"
+                } else if (freqGroups.size == 2) {
+                    val sorted = freqGroups.entries.sortedByDescending { it.key }
+                    "${sorted[0].value}+${sorted[1].value}"
+                } else {
+                    "${coreCount}"
+                }
+
+                val displayName = when {
+                    hardware.isNotEmpty() && clusterInfo.isNotEmpty() -> "$hardware ($clusterInfo)"
+                    hardware.isNotEmpty() -> hardware
+                    cpuModel.isNotEmpty() -> cpuModel
+                    else -> "CPU ($coreCount 核)"
+                }
+
+                Log.d(TAG, "CPU Model: $displayName, cores=$coreCount, clusters=$freqGroups")
+
+                runOnUiThread {
+                    tvCpuModel.text = displayName
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to detect CPU model", e)
+            }
+                }.start()
+    }
+
+    private fun updateCpuInfo() {
+        // Read per-core frequency from /sys (lightweight)
+        for (i in 0 until 8) {
+            try {
+                val freqFile = File("/sys/devices/system/cpu/cpu$i/cpufreq/scaling_cur_freq")
+                val maxFreqFile = File("/sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_max_freq")
+                if (freqFile.exists() && freqFile.canRead()) {
+                    val freq = freqFile.readText().trim().toLongOrNull() ?: 0
+                    val max = if (maxFreqFile.exists() && maxFreqFile.canRead()) maxFreqFile.readText().trim().toLongOrNull() ?: 1 else 1
+                    val usage = if (max > 0) (freq * 100 / max).toInt().coerceIn(0, 100) else 0
+                    runOnUiThread {
+                        coreTextViews[i]?.text = "${freq / 1000} MHz"
+                        animateProgress(coreProgressBars[i], usage)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Use dumpsys cpuinfo for total CPU (works via Shizuku)
+        if (serviceReady) {
+            Thread {
+                try {
+                    val output = executeCommandSync("dumpsys cpuinfo")
+                    if (output.isNotEmpty()) {
+                        for (line in output.lines()) {
+                            val trimmed = line.trim()
+                            if (trimmed.contains("TOTAL")) {
+                                val match = Regex("([\\d.]+)%").find(trimmed)
+                                if (match != null) {
+                                    val usage = match.groupValues[1].toFloat().toInt()
+                                    runOnUiThread {
+                                        tvCpuPercent.text = "$usage%"
+                                        tvCpuBigPercent.text = "$usage%"
+                                        animateProgress(cpuProgress, usage)
+                                    }
+                                    return@Thread
+                                }
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }.start()
+        }
+    }
+
+    private val progressAnimators = mutableMapOf<ProgressBar, android.animation.ValueAnimator>()
+
+    private fun animateProgress(progressBar: ProgressBar?, target: Int) {
+        if (progressBar == null) return
+        val current = progressBar.progress
+        if (current == target) return
+        progressAnimators[progressBar]?.cancel()
+        val anim = android.animation.ValueAnimator.ofInt(current, target)
+        anim.duration = 300
+        anim.interpolator = android.view.animation.DecelerateInterpolator(1.5f)
+        anim.addUpdateListener { progressBar.progress = it.animatedValue as Int }
+        anim.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                progressAnimators.remove(progressBar)
+            }
+        })
+        progressAnimators[progressBar] = anim
+        anim.start()
+    }
+
+    private fun updateMemoryInfo() {
+        try {
+            val memFile = File("/proc/meminfo")
+            if (!memFile.exists()) {
+                Log.w(TAG, "/proc/meminfo not found")
+                return
+            }
+
+            val lines = memFile.readLines()
+            val memTotalLine = lines.firstOrNull { it.startsWith("MemTotal") }
+            val memAvailLine = lines.firstOrNull { it.startsWith("MemAvailable") }
+            val swapTotalLine = lines.firstOrNull { it.startsWith("SwapTotal") }
+            val swapFreeLine = lines.firstOrNull { it.startsWith("SwapFree") }
+            val swapCachedLine = lines.firstOrNull { it.startsWith("SwapCached") }
+
+            if (memTotalLine == null || memAvailLine == null) {
+                Log.w(TAG, "Could not find MemTotal or MemAvailable")
+                return
+            }
+
+            val memTotal = memTotalLine.split("\\s+".toRegex())[1].toLong()
+            val memAvail = memAvailLine.split("\\s+".toRegex())[1].toLong()
+            val swapTotal = swapTotalLine?.split("\\s+".toRegex())?.getOrNull(1)?.toLongOrNull() ?: 0L
+            val swapFree = swapFreeLine?.split("\\s+".toRegex())?.getOrNull(1)?.toLongOrNull() ?: 0L
+            val swapCached = swapCachedLine?.split("\\s+".toRegex())?.getOrNull(1)?.toLongOrNull() ?: 0L
+
+            val physPct = ((memTotal - memAvail) * 100 / memTotal).toInt()
+            val swapPct = if (swapTotal > 0) ((swapTotal - swapFree) * 100 / swapTotal).toInt() else 0
+            val usedPct = physPct + swapPct
+
+            Log.d(TAG, "Mem: total=$memTotal avail=$memAvail physPct=$physPct swapPct=$swapPct usedPct=$usedPct")
+
+            runOnUiThread {
+                tvMemUsed.text = "$usedPct%"
+                tvMemSystem.text = String.format("%.1f GB", memTotal / 1048576.0)
+                tvMemSystemPct.text = " ($physPct%)"
+                tvMemApps.text = String.format("%.1f GB", swapTotal / 1048576.0)
+                tvMemAppsPct.text = " ($swapPct%)"
+                tvSwapCached.text = String.format("%d MB", swapCached / 1024)
+                memRing.setProgress(usedPct)
+                pbMemSystem.progress = physPct
+                pbMemApps.progress = swapPct
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update memory info", e)
+        }
+    }
+
+    private fun updateBatteryInfo() {
+        try {
+            val bm = getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+            val level = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val temp = batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0
+            val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, 0) ?: 0
+            val voltage = batteryIntent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
+            val currentNow = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+            val currentMA = if (currentNow != Int.MIN_VALUE) currentNow / 1000 else 0
+            val absCurrent = kotlin.math.abs(currentMA)
+            val powerW = absCurrent * voltage / 1000000.0
+
+            runOnUiThread {
+                tvBatteryPercent.text = "$level"
+                tvBatteryTemp.text = "${temp / 10}°C"
+                tvBatteryPower.text = String.format("%.1f W", powerW)
+                tvBatteryVoltage.text = String.format("%.3f V", voltage / 1000.0)
+                tvBatteryCurrent.text = "${absCurrent} mA"
+                tvBatteryStatus.text = when (status) {
+                    BatteryManager.BATTERY_STATUS_CHARGING -> "充电中"
+                    BatteryManager.BATTERY_STATUS_DISCHARGING -> "放电中"
+                    BatteryManager.BATTERY_STATUS_FULL -> "已满"
+                    else -> "未知"
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update battery info", e)
+        }
+    }
+
+    private fun updateStorageInfo() {
+        try {
+            // Read real total storage from /sys/block/
+            var totalBytes = 0L
+            val blockDir = File("/sys/block")
+            if (blockDir.exists()) {
+                blockDir.listFiles()?.forEach { device ->
+                    try {
+                        val sizeFile = File(device, "size")
+                        if (sizeFile.exists()) {
+                            val sectors = sizeFile.readText().trim().toLongOrNull() ?: 0
+                            val bytes = sectors * 512L // 512 bytes per sector
+                            if (bytes > totalBytes) totalBytes = bytes
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+
+            // Fallback to StatFs
+            if (totalBytes == 0L) {
+                val stat = android.os.StatFs("/data")
+                totalBytes = stat.totalBytes
+            }
+
+            val stat = android.os.StatFs("/data")
+            val availBytes = stat.availableBytes
+            val usedBytes = totalBytes - availBytes
+            val totalGB = totalBytes / 1073741824.0
+            val usedGB = usedBytes / 1073741824.0
+            val usedPercent = if (totalGB > 0) (usedGB * 100 / totalGB).toInt() else 0
+
+            runOnUiThread {
+                tvStorageAvail.text = "${String.format("%.0f", usedGB)} / ${String.format("%.0f", totalGB)} GB"
+                pbStorage.progress = usedPercent
+                tvStorageApps.text = "${String.format("%.0f", usedGB * 0.6)}G"
+                tvStorageMedia.text = "${String.format("%.0f", usedGB * 0.25)}G"
+                tvStorageSystem.text = "${String.format("%.0f", usedGB * 0.15)}G"
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update storage info", e)
+        }
+    }
+
+    private fun updateNetworkInfo() {
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            val activeNetwork = cm.activeNetwork
+            val caps = cm.getNetworkCapabilities(activeNetwork)
+            val isWifi = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+            val isCellular = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
+
+            val tm = getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+            var carrier = ""
+            try {
+                val simOp = tm.simOperator ?: ""
+                carrier = when (simOp) {
+                    "46000", "46002", "46007", "46008" -> "中国移动"
+                    "46001", "46006", "46009" -> "中国联通"
+                    "46003", "46005", "46011" -> "中国电信"
+                    "46015" -> "中国广电"
+                    else -> tm.networkOperatorName ?: ""
+                }
+            } catch (_: Exception) {
+                carrier = tm.networkOperatorName ?: ""
+            }
+            if (carrier.isEmpty()) carrier = prefs.getString("carrier_name", "") ?: ""
+
+            var signalText = "—"
+            var rateText = "—"
+            var detailText = "—"
+            var typeLabel = ""
+
+            if (isWifi) {
+                try {
+                    val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+                    val info = wm.connectionInfo
+                    signalText = "${info.rssi} dBm"
+                    rateText = "${info.linkSpeed} Mbps"
+
+                    // WiFi type detection
+                    val standard = if (android.os.Build.VERSION.SDK_INT >= 30) info.wifiStandard else 0
+                    val freq = info.frequency
+                    val speed = info.linkSpeed
+
+                    detailText = when {
+                        standard == 7 -> "WiFi 7"
+                        standard == 6 -> "WiFi 6E"
+                        standard == 5 -> "WiFi 6"
+                        standard == 3 -> "WiFi 4"
+                        // standard == 4 or 0: might be WiFi 5/6/7, use frequency + speed
+                        freq > 5900 && speed > 500 -> "WiFi 7"  // 6GHz
+                        freq > 4900 && speed > 500 -> "WiFi 7"  // 5GHz + high speed
+                        freq > 4900 -> "WiFi 6"  // 5GHz, moderate speed
+                        freq > 2400 -> "WiFi 4"
+                        else -> "WiFi"
+                    }
+                    typeLabel = detailText
+                    carrier = "WiFi"
+                } catch (_: Exception) {
+                    detailText = "WiFi"; typeLabel = "WiFi"
+                }
+            } else if (isCellular) {
+                try {
+                    val networkType = try { tm.dataNetworkType } catch (_: Exception) { 0 }
+                    detailText = when (networkType) {
+                        android.telephony.TelephonyManager.NETWORK_TYPE_NR -> "5G NR"
+                        android.telephony.TelephonyManager.NETWORK_TYPE_LTE -> "4G LTE"
+                        android.telephony.TelephonyManager.NETWORK_TYPE_HSDPA,
+                        android.telephony.TelephonyManager.NETWORK_TYPE_HSUPA,
+                        android.telephony.TelephonyManager.NETWORK_TYPE_HSPAP,
+                        android.telephony.TelephonyManager.NETWORK_TYPE_UMTS -> "3G"
+                        android.telephony.TelephonyManager.NETWORK_TYPE_EDGE,
+                        android.telephony.TelephonyManager.NETWORK_TYPE_GPRS -> "2G"
+                        else -> "移动数据"
+                    }
+                    typeLabel = detailText
+
+                    try {
+                        val cellInfo = tm.allCellInfo
+                        if (cellInfo != null) {
+                            for (ci in cellInfo) {
+                                if (ci.isRegistered) {
+                                    signalText = "${ci.cellSignalStrength.dbm} dBm"
+                                    break
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+
+                    val downKbps = caps?.getLinkDownstreamBandwidthKbps() ?: 0
+                    if (downKbps > 0) rateText = if (downKbps >= 1000) "${downKbps / 1000} Mbps" else "${downKbps} Kbps"
+                } catch (_: Exception) {
+                    detailText = "移动数据"; typeLabel = "移动数据"
+                }
+            } else {
+                detailText = "无网络"; typeLabel = "无网络"
+            }
+
+            runOnUiThread {
+                tvNetTypeLabel.text = typeLabel
+                tvNetSignal.text = signalText
+                tvNetRate.text = rateText
+                tvNetDetail.text = detailText
+                tvNetCarrier.text = carrier.ifEmpty { "—" }
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val currentRx = TrafficStats.getTotalRxBytes()
+            val currentTx = TrafficStats.getTotalTxBytes()
+            if (currentRx < 0 || currentTx < 0) return
+            val currentTime = System.currentTimeMillis()
+
+            if (prevNetTime > 0) {
+                val timeDiff = (currentTime - prevNetTime) / 1000.0
+                if (timeDiff > 0) {
+                    val rxDiff = currentRx - prevRxBytes
+                    val txDiff = currentTx - prevTxBytes
+                    val totalDiff = rxDiff + txDiff
+                    val speedKBps = (totalDiff / 1024.0 / timeDiff).coerceAtLeast(0.0)
+                    runOnUiThread {
+                        tvNetSpeed.text = String.format("%.1f", speedKBps)
+                    }
+                }
+            }
+
+            prevRxBytes = currentRx
+            prevTxBytes = currentTx
+            prevNetTime = currentTime
+        } catch (_: Exception) {}
+    }
+
+    private fun updateSystemInfo() {
+        Thread {
+            var hours = 0L
+            var minutes = 0L
+            var procCount = 0
+
+            // Use Shizuku for system commands (has elevated permissions)
+            if (serviceReady) {
+                // Uptime via Shizuku
+                try {
+                    val uptimeOutput = executeCommandSync("cat /proc/uptime")
+                    if (uptimeOutput.isNotEmpty()) {
+                        val seconds = uptimeOutput.trim().split("\\s+".toRegex())[0].toDoubleOrNull()?.toLong() ?: 0
+                        if (seconds > 0) {
+                            hours = seconds / 3600
+                            minutes = (seconds % 3600) / 60
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                // Process count via Shizuku
+                try {
+                    val psOutput = executeCommandSync("ps -A -o NAME")
+                    if (psOutput.isNotEmpty()) {
+                        val lines = psOutput.lines().filter { it.isNotBlank() && !it.startsWith("NAME") }
+                        procCount = lines.distinct().size // unique process names
+                    }
+                } catch (_: Exception) {}
+            }
+
+            // Fallback: direct commands (limited permissions)
+            if (hours == 0L && minutes == 0L) {
+                try {
+                    val process = Runtime.getRuntime().exec(arrayOf("cat", "/proc/uptime"))
+                    val output = BufferedReader(InputStreamReader(process.inputStream)).readText().trim()
+                    process.waitFor()
+                    val seconds = output.split("\\s+".toRegex())[0].toDoubleOrNull()?.toLong() ?: 0
+                    if (seconds > 0) {
+                        hours = seconds / 3600
+                        minutes = (seconds % 3600) / 60
+                    }
+                } catch (_: Exception) {}
+            }
+
+            if (procCount == 0) {
+                try {
+                    procCount = File("/proc").listFiles()?.count {
+                        it.isDirectory && it.name.matches(Regex("\\d+"))
+                    } ?: 0
+                } catch (_: Exception) {}
+            }
+
+            val health = when {
+                procCount > 500 -> "警告"
+                procCount > 300 -> "一般"
+                else -> "良好"
+            }
+
+            runOnUiThread {
+                tvUptime.text = "${hours}h ${minutes}m"
+                tvProcesses.text = "$procCount"
+                tvHealthStatus.text = health
+            }
+
+            updateShizukuStatus()
+        }.start()
+    }
+
+    private fun loadTopApps() {
+        try {
+            val pm = packageManager
+            val appCpuList = mutableListOf<Triple<String, Float, android.graphics.drawable.Drawable?>>()
+
+            // Try top command
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", "top -bn1 -o %CPU | head -20"))
+                val reader = BufferedReader(InputStreamReader(process.inputStream))
+                val lines = reader.readLines()
+                process.waitFor()
+
+                for (line in lines) {
+                    try {
+                        val trimmed = line.trim()
+                        if (trimmed.startsWith("PID") || trimmed.isEmpty()) continue
+
+                        val parts = trimmed.split("\\s+".toRegex())
+                        if (parts.size >= 9) {
+                            val cpuPercent = parts[8].toFloatOrNull() ?: continue
+                            if (cpuPercent <= 0f) continue
+                            val pkg = parts.last().trim()
+
+                            try {
+                                val appInfo = pm.getApplicationInfo(pkg, 0)
+                                val name = pm.getApplicationLabel(appInfo).toString()
+                                val icon = loadIconCached(pm, pkg)
+                                appCpuList.add(Triple(name, cpuPercent, icon))
+                            } catch (_: Exception) {}
+                        }
+                    } catch (_: Exception) {}
+                }
+            } catch (_: Exception) {}
+
+            // Fallback: dumpsys cpuinfo
+            if (appCpuList.isEmpty()) {
+                try {
+                    val cpuOutput = executeCommandSync("dumpsys cpuinfo")
+                    if (cpuOutput.isNotEmpty()) {
+                        val lines = cpuOutput.lines()
+                        for (line in lines) {
+                            try {
+                                val trimmed = line.trim()
+                                if (!trimmed.contains("%") || trimmed.startsWith("TOTAL")) continue
+                                val match = Regex("^([\\d.]+)%\\s+\\d+/(.+?):").find(trimmed)
+                                if (match != null) {
+                                    val percent = match.groupValues[1].toFloatOrNull() ?: continue
+                                    val pkg = match.groupValues[2].trim().substringBefore(":")
+                                    try {
+                                        val appInfo = pm.getApplicationInfo(pkg, 0)
+                                        val name = pm.getApplicationLabel(appInfo).toString()
+                                        val icon = loadIconCached(pm, pkg)
+                                        appCpuList.add(Triple(name, percent, icon))
+                                    } catch (_: Exception) {}
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
+            val topApps = appCpuList.sortedByDescending { it.second }.take(20)
+
+            // Use cached launchable list to avoid repeated pm.getInstalledApplications
+            if (cachedLaunchableApps.isEmpty()) {
+                val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                cachedLaunchableApps = packages
+                    .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
+                    .map { CachedApp(it.packageName, pm.getApplicationLabel(it).toString()) }
+            }
+
+            val result: List<Triple<String, Float, android.graphics.drawable.Drawable?>>
+            if (topApps.isEmpty()) {
+                result = cachedLaunchableApps.take(20).map {
+                    Triple(it.appName, 0f, loadIconCached(pm, it.packageName))
+                }
+            } else {
+                val existingNames = topApps.map { it.first }.toSet()
+                val extras = cachedLaunchableApps
+                    .filter { it.appName !in existingNames }
+                    .take(20 - topApps.size)
+                    .map { Triple(it.appName, 0f, loadIconCached(pm, it.packageName)) }
+                result = topApps + extras
+            }
+
+            runOnUiThread { renderTopApps(result) }
+        } catch (_: Exception) {}
+    }
+
+    private fun loadIconCached(pm: PackageManager, packageName: String): android.graphics.drawable.Drawable? {
+        AppIconLoader.getCached(packageName)?.let { return it }
+        return try {
+            val icon = pm.getApplicationIcon(pm.getApplicationInfo(packageName, 0))
+            AppIconLoader.put(packageName, icon)
+            icon
+        } catch (_: Exception) { null }
+    }
+
+    private fun renderTopApps(apps: List<Triple<String, Float, android.graphics.drawable.Drawable?>>) {
+        topAppsContainer.removeAllViews()
+        for ((index, app) in apps.withIndex()) {
+            val (name, percent, icon) = app
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, 12, 0, 12)
+            }
+
+            val rankView = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(24, LinearLayout.LayoutParams.WRAP_CONTENT)
+                text = "${index + 1}"
+                textSize = 12f
+                setTextColor(getColor(R.color.on_surface_variant))
+            }
+
+            val iconView = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(36, 36).apply { marginStart = 8 }
+                setImageDrawable(icon)
+            }
+
+            val nameView = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = 12
+                }
+                text = name
+                textSize = 14f
+                setTextColor(getColor(R.color.on_surface))
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+
+            val percentView = TextView(this).apply {
+                // Estimate watts: CPU max ~5W, convert percentage to watts
+                val watts = percent * 5.0f / 100.0f
+                text = String.format("-%.1fW", watts)
+                textSize = 12f
+                setTextColor(getColor(R.color.primary))
+            }
+
+            row.addView(rankView)
+            row.addView(iconView)
+            row.addView(nameView)
+            row.addView(percentView)
+            topAppsContainer.addView(row)
+        }
+    }
+
+    private fun executeCommandSync(command: String): String {
+        val binder = taskHideService ?: return ""
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        try {
+            data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
+            data.writeString(command)
+            binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
+            reply.readException()
+            val success = reply.readInt() != 0
+            val output = reply.readString() ?: ""
+            Log.d(TAG, "Command '$command' => success=$success output=${output.take(200)}")
+            return output
+        } catch (e: Exception) {
+            Log.e(TAG, "Command failed: $command", e)
+            return ""
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
+    private fun updateHiddenCount() {
+        val hiddenApps = prefs.getStringSet("hidden_apps", emptySet()) ?: emptySet()
+        tvHiddenStatus.text = "已隐藏 ${hiddenApps.size}"
+    }
+
+    private fun startMonitoring() {
+        if (monitoringActive) return
+        monitoringActive = true
+        handler.post(updateRunnable)
+    }
+
+    private fun stopMonitoring() {
+        monitoringActive = false
+        handler.removeCallbacks(updateRunnable)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateHiddenCount()
+        updateShizukuStatus()
+        startMonitoring()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopMonitoring()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        handler.removeCallbacksAndMessages(null)
+        Shizuku.removeRequestPermissionResultListener(shizukuPermissionResultListener)
+        Shizuku.removeBinderReceivedListener(binderReceivedListener)
+        Shizuku.removeBinderDeadListener(binderDeadListener)
+        try {
+            Shizuku.unbindUserService(
+                Shizuku.UserServiceArgs(ComponentName(this, TaskHideService::class.java)),
+                serviceConnection, true
+            )
+        } catch (_: Exception) {}
+    }
+}

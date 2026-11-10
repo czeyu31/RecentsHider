@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background">
+
+    <!-- Top Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp">
+
+        <ImageView android:id="@+id/btnBack" android:layout_width="36dp" android:layout_height="36dp"
+            android:src="@drawable/ic_back" android:padding="6dp" android:background="@drawable/bg_icon_circle"
+            app:tint="@color/on_surface" />
+
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="文件传输" android:textSize="18sp" android:textColor="@color/on_surface"
+            android:fontFamily="sans-serif-medium" android:layout_marginStart="12dp" />
+
+        <ImageView android:id="@+id/btnScan" android:layout_width="32dp" android:layout_height="32dp"
+            android:src="@drawable/ic_speed" android:padding="6dp" android:background="@drawable/bg_icon_circle"
+            app:tint="@color/on_surface_variant" android:layout_marginEnd="8dp"
+            android:contentDescription="scan" />
+
+        <ImageView android:id="@+id/btnSettings" android:layout_width="32dp" android:layout_height="32dp"
+            android:src="@drawable/ic_settings" android:padding="6dp" android:background="@drawable/bg_icon_circle"
+            app:tint="@color/on_surface_variant"
+            android:contentDescription="settings" />
+    </LinearLayout>
+
+    <ScrollView android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scrollbars="none" android:clipToPadding="false">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:paddingHorizontal="16dp">
+
+            <!-- Upload Area -->
+            <FrameLayout android:id="@+id/uploadArea"
+                android:layout_width="match_parent" android:layout_height="120dp"
+                android:background="@drawable/bg_upload_area"
+                android:layout_marginTop="8dp" android:layout_marginBottom="12dp"
+                android:clickable="true" android:focusable="true">
+                <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:gravity="center"
+                    android:layout_gravity="center">
+                    <TextView android:id="@+id/tvUploadText" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="点击选择文件"
+                        android:textSize="14sp"
+                        android:textColor="@color/on_surface_variant" />
+                    <TextView android:id="@+id/tvUrl" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="" android:textSize="11sp"
+                        android:textColor="@color/on_surface_variant"
+                        android:layout_marginTop="4dp"
+                        android:fontFamily="monospace" />
+                </LinearLayout>
+            </FrameLayout>
+
+            <!-- Quick Actions Row -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:layout_marginBottom="12dp">
+
+                <LinearLayout android:id="@+id/btnFile" android:layout_width="0dp"
+                    android:layout_height="wrap_content" android:layout_weight="1"
+                    android:orientation="vertical" android:gravity="center"
+                    android:background="@drawable/bg_glass_card" android:padding="14dp"
+                    android:layout_marginEnd="4dp"
+                    android:clickable="true" android:focusable="true">
+                    <ImageView android:layout_width="28dp" android:layout_height="28dp"
+                        android:src="@drawable/ic_ft_file"
+                        app:tint="@color/primary"
+                        android:layout_marginBottom="4dp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="文件" android:textSize="11sp"
+                        android:textColor="@color/on_surface" />
+                </LinearLayout>
+
+                <LinearLayout android:id="@+id/btnMedia" android:layout_width="0dp"
+                    android:layout_height="wrap_content" android:layout_weight="1"
+                    android:orientation="vertical" android:gravity="center"
+                    android:background="@drawable/bg_glass_card" android:padding="14dp"
+                    android:layout_marginHorizontal="4dp"
+                    android:clickable="true" android:focusable="true">
+                    <ImageView android:layout_width="28dp" android:layout_height="28dp"
+                        android:src="@drawable/ic_ft_media"
+                        app:tint="@color/secondary"
+                        android:layout_marginBottom="4dp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="媒体" android:textSize="11sp"
+                        android:textColor="@color/on_surface" />
+                </LinearLayout>
+
+                <LinearLayout android:id="@+id/btnClipboard" android:layout_width="0dp"
+                    android:layout_height="wrap_content" android:layout_weight="1"
+                    android:orientation="vertical" android:gravity="center"
+                    android:background="@drawable/bg_glass_card" android:padding="14dp"
+                    android:layout_marginHorizontal="4dp"
+                    android:clickable="true" android:focusable="true">
+                    <ImageView android:layout_width="28dp" android:layout_height="28dp"
+                        android:src="@drawable/ic_ft_clipboard"
+                        app:tint="@color/tertiary"
+                        android:layout_marginBottom="4dp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="剪贴板" android:textSize="11sp"
+                        android:textColor="@color/on_surface" />
+                </LinearLayout>
+
+                <LinearLayout android:id="@+id/btnText" android:layout_width="0dp"
+                    android:layout_height="wrap_content" android:layout_weight="1"
+                    android:orientation="vertical" android:gravity="center"
+                    android:background="@drawable/bg_glass_card" android:padding="14dp"
+                    android:layout_marginHorizontal="4dp"
+                    android:clickable="true" android:focusable="true">
+                    <ImageView android:layout_width="28dp" android:layout_height="28dp"
+                        android:src="@drawable/ic_ft_text"
+                        app:tint="@color/gradient_cyan_start"
+                        android:layout_marginBottom="4dp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="文本" android:textSize="11sp"
+                        android:textColor="@color/on_surface" />
+                </LinearLayout>
+
+                <LinearLayout android:id="@+id/btnFolder" android:layout_width="0dp"
+                    android:layout_height="wrap_content" android:layout_weight="1"
+                    android:orientation="vertical" android:gravity="center"
+                    android:background="@drawable/bg_glass_card" android:padding="14dp"
+                    android:layout_marginHorizontal="4dp"
+                    android:clickable="true" android:focusable="true">
+                    <ImageView android:layout_width="28dp" android:layout_height="28dp"
+                        android:src="@drawable/ic_ft_folder"
+                        app:tint="@color/gradient_rose_start"
+                        android:layout_marginBottom="4dp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="文件夹" android:textSize="11sp"
+                        android:textColor="@color/on_surface" />
+                </LinearLayout>
+
+                <LinearLayout android:id="@+id/btnApp" android:layout_width="0dp"
+                    android:layout_height="wrap_content" android:layout_weight="1"
+                    android:orientation="vertical" android:gravity="center"
+                    android:background="@drawable/bg_glass_card" android:padding="14dp"
+                    android:layout_marginStart="4dp"
+                    android:clickable="true" android:focusable="true">
+                    <ImageView android:layout_width="28dp" android:layout_height="28dp"
+                        android:src="@drawable/ic_ft_app"
+                        app:tint="@color/gradient_green_start"
+                        android:layout_marginBottom="4dp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="应用" android:textSize="11sp"
+                        android:textColor="@color/on_surface" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Receive URL Input -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:layout_marginBottom="12dp">
+
+                <EditText android:id="@+id/etReceiveUrl" android:layout_width="0dp"
+                    android:layout_height="44dp" android:layout_weight="1"
+                    android:hint="输入URL接收..."
+                    android:textSize="13sp"
+                    android:textColor="@color/on_surface"
+                    android:textColorHint="@color/on_surface_variant"
+                    android:background="@drawable/bg_glass_card"
+                    android:paddingHorizontal="14dp"
+                    android:singleLine="true"
+                    android:fontFamily="monospace" />
+
+                <TextView android:id="@+id/btnReceive" android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:text="接收"
+                    android:textSize="13sp"
+                    android:textColor="@color/on_primary"
+                    android:background="@drawable/bg_gradient_secondary"
+                    android:paddingHorizontal="16dp"
+                    android:gravity="center"
+                    android:layout_marginStart="8dp" />
+            </LinearLayout>
+
+            <!-- Nearby Devices Section -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="附近设备"
+                    android:textSize="13sp"
+                    android:textColor="@color/on_surface_variant"
+                    android:letterSpacing="0.05" />
+                <TextView android:id="@+id/tvDeviceStatus" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="" android:textSize="11sp"
+                    android:textColor="@color/on_surface_variant"
+                    android:layout_marginEnd="8dp" />
+                <TextView android:id="@+id/tvDeviceCount" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0" android:textSize="11sp"
+                    android:textColor="@color/primary"
+                    android:background="@drawable/bg_pill_primary"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="2dp" />
+                <TextView android:id="@+id/btnQuickConnect" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="快速连接"
+                    android:textSize="11sp"
+                    android:textColor="@color/primary"
+                    android:layout_marginStart="8dp" />
+            </LinearLayout>
+
+            <!-- Device List Container -->
+            <LinearLayout android:id="@+id/deviceListContainer"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="12dp" />
+
+            <!-- Transfer Tasks Section -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="传输任务"
+                    android:textSize="13sp"
+                    android:textColor="@color/on_surface_variant"
+                    android:letterSpacing="0.05" />
+                <TextView android:id="@+id/tvTodayTransfer" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="" android:textSize="11sp"
+                    android:textColor="@color/on_surface_variant" />
+            </LinearLayout>
+
+            <!-- Task List Container -->
+            <LinearLayout android:id="@+id/taskListContainer"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="12dp" />
+
+            <!-- Shared Files Section -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="共享文件"
+                    android:textSize="13sp"
+                    android:textColor="@color/on_surface_variant"
+                    android:letterSpacing="0.05" />
+                <TextView android:id="@+id/tvAvailableSpace" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="" android:textSize="11sp"
+                    android:textColor="@color/on_surface_variant" />
+            </LinearLayout>
+
+            <!-- File List Container -->
+            <LinearLayout android:id="@+id/fileListContainer"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="24dp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
