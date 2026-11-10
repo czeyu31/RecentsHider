@@ -1,8 +1,8 @@
-# System Tool
+﻿# System Tool
 
 一款基于 Shizuku 的 Android 系统工具箱：应用管理、无障碍保活、通知历史、文件传输、ADB 命令。
 
-> v30.0 起 UI 全面重写为 Jetpack Compose 双主题（纸本 / 石墨·雾玉），并移除了原有的系统监控页（CPU / 内存 / 电池 / 存储 / 网络 / 高耗能排行）。
+> v3.0.0 起 UI 全面重写为 Jetpack Compose 双主题（纸本 / 石墨·雾玉），并移除了原有的系统监控页（CPU / 内存 / 电池 / 存储 / 网络 / 高耗能排行）。
 
 ## ⬇️ 下载
 
@@ -10,7 +10,7 @@
 
 或访问 [Releases 页面](https://github.com/czeyu31/RecentsHider/releases) 查看所有版本。
 
-仓库根目录也提供一份可直接安装的构建产物：`RecentsHider-v30.0-redesign.apk`。
+仓库根目录也提供一份可直接安装的构建产物：`RecentsHider-v3.0.0.apk`。
 
 ## 功能
 
