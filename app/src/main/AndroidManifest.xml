@@ -52,7 +52,6 @@
         <activity android:name=".AppManageActivity" />
         <activity android:name=".AdbActivity" />
         <activity android:name=".NotificationHistoryActivity" />
-        <activity android:name=".SpeedTestActivity" />
         <activity android:name=".FileTransferActivity" />
         <activity android:name=".ApkInstallerActivity" />
         <activity
@@ -103,7 +102,6 @@
             </intent-filter>
         </activity>
         <activity android:name=".FilePickerActivity" />
-        <activity android:name=".BatteryDetailActivity" />
         <activity android:name=".AccessibilityManageActivity" />
 
         <provider
