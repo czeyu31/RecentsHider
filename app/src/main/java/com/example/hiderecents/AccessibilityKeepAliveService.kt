@@ -225,14 +225,10 @@ class AccessibilityKeepAliveService : AccessibilityService() {
             val triggerAt = System.currentTimeMillis() + CHECK_INTERVAL
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                // setAlarmClock is exempt from Doze and battery optimization
-                // It shows an alarm icon in status bar, but is the most reliable way
-                val showIntent = PendingIntent.getActivity(
-                    this, 1,
-                    Intent(this, MainActivity::class.java),
-                    PendingIntent.FLAG_IMMUTABLE
-                )
-                am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAt, showIntent), pending)
+                // 用 setAndAllowWhileIdle 而不是 setAlarmClock：
+                // setAlarmClock 会在状态栏挂一个闹钟图标，用户会误以为设了闹钟；
+                // setAndAllowWhileIdle 同样能在 Doze 下唤醒，且不需要 SCHEDULE_EXACT_ALARM 权限。
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
             } else {
                 am.setRepeating(AlarmManager.RTC_WAKEUP, triggerAt, CHECK_INTERVAL, pending)
             }

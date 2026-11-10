@@ -24,6 +24,13 @@ class BootReceiver : BroadcastReceiver() {
             Log.d(TAG, "Boot completed, scheduling accessibility restore")
 
             val prefs = context.getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
+
+            // 开机后按开关状态拉起常驻前台服务（应用本体保活）
+            if (prefs.getBoolean("keep_alive_enabled", false)) {
+                KeepAliveService.start(context)
+                Log.d(TAG, "KeepAliveService started after boot")
+            }
+
             val autoProtect = prefs.getBoolean("a11y_auto_protect", false)
             if (!autoProtect) {
                 Log.d(TAG, "Auto-protect disabled, skipping")

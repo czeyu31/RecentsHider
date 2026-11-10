@@ -5,74 +5,81 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.SharedPreferences
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Parcel
 import android.provider.Settings
-import android.text.Editable
-import android.text.TextWatcher
 import android.util.Log
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.accessibility.AccessibilityManager
-import android.widget.ImageView
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.Glide
-import com.google.android.material.textfield.TextInputEditText
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
+import androidx.core.view.WindowCompat
+import com.example.hiderecents.ui.screens.A11yActionSheet
+import com.example.hiderecents.ui.screens.A11yFilter
+import com.example.hiderecents.ui.screens.A11yServiceItem
+import com.example.hiderecents.ui.screens.AccessibilityScreen
+import com.example.hiderecents.ui.theme.AppTheme
+import com.example.hiderecents.ui.theme.applyDshSystemBars
+import com.example.hiderecents.ui.theme.DshTheme
 import rikka.shizuku.Shizuku
+import kotlin.math.abs
 
+/**
+ * 无障碍管理（Compose 重写版）。
+ *
+ * 功能与原 AccessibilityManageActivity 逐条对齐：
+ * - AccessibilityManager 枚举服务 + Settings.Secure 判定启用状态
+ * - 通过 Shizuku 写 enabled_accessibility_services 开关服务
+ * - 防回收保护三方状态机（protected_a11y_services / user_disabled_a11y / a11y_auto_protect）
+ * - 守护服务确保开启，失败回落系统无障碍设置页
+ * - 四字段搜索、三档筛选、长按置顶与保护、右滑返回
+ */
 class AccessibilityManageActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "AccessibilityManage"
     }
 
-    private lateinit var recyclerView: RecyclerView
-    private lateinit var adapter: AccessibilityListAdapter
     private lateinit var prefs: SharedPreferences
-    private lateinit var tvAccessCount: TextView
-    private lateinit var tvProtectStatus: TextView
-    private lateinit var tvListHeader: TextView
-    private lateinit var etSearch: TextInputEditText
-    private lateinit var switchAutoProtect: SquishSwitch
+
+    private val protectedServices = mutableSetOf<String>()
+    private val pinnedServices = mutableSetOf<String>()
 
     private var shizukuPermissionGranted = false
     private var taskHideService: IBinder? = null
     private var serviceReady = false
-    private val protectedServices = mutableSetOf<String>()
-    private val pinnedServices = mutableSetOf<String>()
-    private var allItems = listOf<AccessibilityItem>()
-    private var currentQuery = ""
-    private var hideSystemApps = false
 
-    data class AccessibilityItem(
-        val componentName: String,
-        val packageName: String,
-        val appName: String,
-        val serviceName: String,
-        val description: String,
-        val icon: android.graphics.drawable.Drawable?,
-        val isEnabled: Boolean,
-        val isProtected: Boolean,
-        val isPinned: Boolean,
-        val isSystem: Boolean
-    )
+    private var allItems by mutableStateOf(listOf<A11yServiceItem>())
+    private var loading by mutableStateOf(true)
+    private var query by mutableStateOf("")
+    private var filter by mutableStateOf(A11yFilter.ALL)
+    private var autoProtect by mutableStateOf(false)
+    private var keepAliveEnabled by mutableStateOf(false)
+    private var actionItem by mutableStateOf<A11yServiceItem?>(null)
+
+    private val iconCache = mutableMapOf<String, androidx.compose.ui.graphics.ImageBitmap>()
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
-            taskHideService = service; serviceReady = true
+            taskHideService = service
+            serviceReady = true
             loadAccessibilityServices()
-            updateProtectStatus()
+            refreshKeepAliveState()
         }
+
         override fun onServiceDisconnected(name: ComponentName) {
-            taskHideService = null; serviceReady = false
+            taskHideService = null
+            serviceReady = false
         }
     }
 
@@ -83,79 +90,61 @@ class AccessibilityManageActivity : AppCompatActivity() {
         }
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener { checkShizukuPermission() }
+
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
-        shizukuPermissionGranted = false; taskHideService = null; serviceReady = false
+        shizukuPermissionGranted = false
+        taskHideService = null
+        serviceReady = false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_accessibility_manage)
 
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         protectedServices.addAll(prefs.getStringSet("protected_a11y_services", emptySet()) ?: emptySet())
         pinnedServices.addAll(prefs.getStringSet("pinned_a11y_services", emptySet()) ?: emptySet())
+        autoProtect = prefs.getBoolean("a11y_auto_protect", false)
 
-        hideSystemApps = prefs.getBoolean("a11y_hide_system", false)
+        val theme = AppTheme.fromPref(prefs.getString("ui_theme", null))
+        applySystemBars(theme)
 
-        tvAccessCount = findViewById(R.id.tvAccessCount)
-        tvProtectStatus = findViewById(R.id.tvProtectStatus)
-        tvListHeader = findViewById(R.id.tvListHeader)
-        etSearch = findViewById(R.id.etSearch)
-        switchAutoProtect = findViewById(R.id.switchAutoProtect)
+        setContent {
+            DshTheme(theme = theme) {
+                val visible = filterItems(allItems, query, filter)
+                AccessibilityScreen(
+                    services = visible,
+                    totalCount = allItems.size,
+                    enabledCount = allItems.count { it.isEnabled },
+                    protectedCount = activeProtectedCount(),
+                    autoProtect = autoProtect,
+                    keepAliveEnabled = keepAliveEnabled,
+                    query = query,
+                    onQueryChange = { query = it },
+                    filter = filter,
+                    onFilterChange = { filter = it },
+                    loading = loading,
+                    onBack = { finish() },
+                    onToggleAutoProtect = { applyAutoProtect(it) },
+                    onToggleService = { item, enable -> toggleService(item, enable) },
+                    onOpenActions = { actionItem = it },
+                    onOpenSystemSettings = { openSystemAccessibilitySettings() },
+                )
 
-        val switchHideSystem = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchHideSystem)
-        switchHideSystem.isChecked = hideSystemApps
-        switchHideSystem.setOnCheckedChangeListener { _, isChecked ->
-            hideSystemApps = isChecked
-            prefs.edit().putBoolean("a11y_hide_system", isChecked).apply()
-            filterAndDisplay()
-        }
-
-        switchAutoProtect.isChecked = prefs.getBoolean("a11y_auto_protect", false)
-
-        switchAutoProtect.listener = { isChecked ->
-            prefs.edit().putBoolean("a11y_auto_protect", isChecked).apply()
-            if (isChecked) {
-                ensureKeepAliveEnabled()
-                autoAddEnabledToProtected()
-            }
-            loadAccessibilityServices()
-            updateProtectStatus()
-        }
-
-        etSearch.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
-                currentQuery = s?.toString()?.lowercase() ?: ""
-                filterAndDisplay()
-            }
-        })
-
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
-
-        recyclerView = findViewById(R.id.recyclerView)
-        recyclerView.layoutManager = LinearLayoutManager(this)
-        adapter = AccessibilityListAdapter(
-            onToggle = { item, enable -> toggleService(item, enable) },
-            onToggleProtect = { item, protect -> toggleProtection(item, protect) }
-        )
-        recyclerView.adapter = adapter
-
-        // 右滑返回手势
-        val gestureDetector = android.view.GestureDetector(this, object : android.view.GestureDetector.SimpleOnGestureListener() {
-            override fun onFling(e1: android.view.MotionEvent?, e2: android.view.MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                if (e1 == null) return false
-                val diffX = e2.x - e1.x
-                if (kotlin.math.abs(diffX) > 100 && kotlin.math.abs(velocityX) > 100) {
-                    if (diffX > 0) { finish(); return true }
+                actionItem?.let { item ->
+                    A11yActionSheet(
+                        item = item,
+                        onDismiss = { actionItem = null },
+                        onTogglePin = {
+                            actionItem = null
+                            togglePin(item)
+                        },
+                        onToggleProtect = {
+                            actionItem = null
+                            toggleProtection(item, !item.isProtected)
+                        },
+                    )
                 }
-                return false
             }
-        })
-        findViewById<View>(android.R.id.content).setOnTouchListener { _, event ->
-            gestureDetector.onTouchEvent(event)
-            false
         }
 
         Shizuku.addRequestPermissionResultListener(shizukuPermissionResultListener)
@@ -164,17 +153,18 @@ class AccessibilityManageActivity : AppCompatActivity() {
         checkShizukuPermission()
 
         loadAccessibilityServices()
+        refreshKeepAliveState()
 
-        // 首次打开自动开启防回收保护和守护服务
+        // 首次打开自动开启防回收保护与守护服务
         if (!prefs.getBoolean("a11y_first_setup_done", false)) {
             prefs.edit().putBoolean("a11y_auto_protect", true).apply()
-            switchAutoProtect.isChecked = true
+            autoProtect = true
             autoAddEnabledToProtected()
             ensureKeepAliveEnabled()
             prefs.edit().putBoolean("a11y_first_setup_done", true).apply()
         }
 
-        // 每次打开都检查守护服务是否在运行，如果不是则提醒
+        // 每次打开都检查守护服务是否在运行
         if (prefs.getBoolean("a11y_auto_protect", false) && !isKeepAliveServiceEnabled()) {
             ensureKeepAliveEnabled()
         }
@@ -183,6 +173,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         loadAccessibilityServices()
+        refreshKeepAliveState()
     }
 
     override fun onDestroy() {
@@ -193,15 +184,26 @@ class AccessibilityManageActivity : AppCompatActivity() {
         try {
             Shizuku.unbindUserService(
                 Shizuku.UserServiceArgs(ComponentName(this, TaskHideService::class.java)),
-                serviceConnection, true
+                serviceConnection,
+                true,
             )
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
+
+    // ------------------------------------------------------------------ 主题
+
+    private fun applySystemBars(theme: AppTheme) {
+        applyDshSystemBars(theme)
+    }
+
+    // ------------------------------------------------------------------ Shizuku
 
     private fun checkShizukuPermission() {
         if (!Shizuku.pingBinder() || Shizuku.isPreV11()) return
         if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
-            shizukuPermissionGranted = true; bindService()
+            shizukuPermissionGranted = true
+            bindService()
         } else {
             Shizuku.requestPermission(1001)
         }
@@ -212,142 +214,214 @@ class AccessibilityManageActivity : AppCompatActivity() {
             Shizuku.bindUserService(
                 Shizuku.UserServiceArgs(ComponentName(this, TaskHideService::class.java))
                     .daemon(false).processNameSuffix("taskhide").debuggable(true).version(1),
-                serviceConnection
+                serviceConnection,
             )
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
 
+    // ------------------------------------------------------------------ 守护服务
+
     private fun ensureKeepAliveEnabled() {
-        if (isKeepAliveServiceEnabled()) return
-        // 通过 Shizuku 直接开启守护无障碍服务
+        if (isKeepAliveServiceEnabled()) {
+            keepAliveEnabled = true
+            return
+        }
         Thread {
-            val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-            val myCn = "${packageName}/${AccessibilityKeepAliveService::class.java.name}"
-            if (!enabled.contains(myCn)) {
-                val newValue = if (enabled.isEmpty()) myCn else "$enabled:$myCn"
-                val success = executeCommandSync("settings put secure enabled_accessibility_services $newValue")
-                if (success) {
-                    executeCommandSync("settings put secure accessibility_enabled 1")
-                }
+            val enabled = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+            ) ?: ""
+            val myCn = "$packageName/${AccessibilityKeepAliveService::class.java.name}"
+            if (parseEnabledComponents(enabled).any { it.matchesKeepAlive() }) {
                 runOnUiThread {
-                    if (success) {
-                        Toast.makeText(this, "已自动开启无障碍保活守护服务", Toast.LENGTH_SHORT).show()
-                    } else {
-                        // Shizuku 失败，引导手动开启
-                        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-                            .setTitle("需要开启守护服务")
-                            .setMessage("防回收功能需要开启「System Tool 无障碍保活」服务。\n\n请在以下页面找到并开启它。")
-                            .setPositiveButton("去开启") { _, _ ->
-                                try { startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (_: Exception) {}
-                            }
-                            .setNegativeButton("取消", null)
-                            .show()
-                    }
+                    keepAliveEnabled = true
                     loadAccessibilityServices()
                 }
+                return@Thread
+            }
+            val newValue = if (enabled.isEmpty()) myCn else "$enabled:$myCn"
+            val success = executeCommandSync("settings put secure enabled_accessibility_services $newValue")
+            if (success) {
+                executeCommandSync("settings put secure accessibility_enabled 1")
+            }
+            runOnUiThread {
+                keepAliveEnabled = success || isKeepAliveServiceEnabled()
+                if (!success) {
+                    Toast.makeText(
+                        this,
+                        "守护服务未能自动开启，请在系统无障碍设置里手动打开 System Tool",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+                loadAccessibilityServices()
             }
         }.start()
     }
 
+    /**
+     * 判断我们的守护服务是否在系统无障碍列表里。
+     *
+     * 不能只用字符串 contains：系统可能把组件名规范化成短形式
+     * （`pkg/.ClassName`）或全形式（`pkg/full.ClassName`），两种都要能认出来。
+     */
     private fun isKeepAliveServiceEnabled(): Boolean {
-        val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-        val myComponent = ComponentName(this, AccessibilityKeepAliveService::class.java).flattenToString()
-        // 也可能用短格式
-        val shortCn = "${packageName}/${AccessibilityKeepAliveService::class.java.name}"
-        return enabledServices.contains(myComponent) || enabledServices.contains(shortCn) ||
-            enabledServices.contains(AccessibilityKeepAliveService::class.java.name)
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+        ) ?: ""
+        return parseEnabledComponents(enabledServices).any { it.matchesKeepAlive() }
+    }
+
+    private fun parseEnabledComponents(value: String): List<ComponentName> =
+        value.split(':')
+            .filter { it.isNotBlank() }
+            .mapNotNull { ComponentName.unflattenFromString(it.trim()) }
+
+    private fun ComponentName.matchesKeepAlive(): Boolean =
+        packageName == this@AccessibilityManageActivity.packageName &&
+            className == AccessibilityKeepAliveService::class.java.name
+
+    private fun isKeepAliveComponent(cn: String): Boolean {
+        val parsed = ComponentName.unflattenFromString(cn.trim()) ?: return false
+        return parsed.packageName == packageName &&
+            parsed.className == AccessibilityKeepAliveService::class.java.name
+    }
+
+    private fun refreshKeepAliveState() {
+        keepAliveEnabled = isKeepAliveServiceEnabled()
     }
 
     private fun autoAddEnabledToProtected() {
-        // 不再自动把所有已启用服务加入保护，只保护用户明确标记的
+        // 只保护用户明确标记的服务，不自动全量加入
     }
 
+    private fun openSystemAccessibilitySettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        } catch (_: Exception) {
+            Toast.makeText(this, "无法打开系统无障碍设置", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ------------------------------------------------------------------ 加载
+
     private fun loadAccessibilityServices() {
+        loading = allItems.isEmpty()
         Thread {
             try {
                 val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-                val installedServices = am.installedAccessibilityServiceList
+                val installed = am.installedAccessibilityServiceList ?: emptyList()
                 val currentEnabled = getEnabledServices()
                 val pm = packageManager
 
-                allItems = installedServices.mapNotNull { info ->
+                val items = installed.mapNotNull { info ->
                     try {
                         val si = info.resolveInfo.serviceInfo
                         val cn = ComponentName(si.packageName, si.name).flattenToString()
                         val appInfo = pm.getApplicationInfo(si.packageName, 0)
                         val appName = pm.getApplicationLabel(appInfo).toString()
-                        val icon = loadIconCached(pm, si.packageName)
-                        val isEnabled = cn in currentEnabled
-                        val desc = info.description?.toString() ?: ""
-                        val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-                        AccessibilityItem(
+                        val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                        A11yServiceItem(
                             componentName = cn,
                             packageName = si.packageName,
                             appName = appName,
                             serviceName = si.name.substringAfterLast('.'),
-                            description = desc,
-                            icon = icon,
-                            isEnabled = isEnabled,
+                            description = info.description?.toString() ?: "",
+                            icon = loadIconBitmap(pm, si.packageName),
+                            isEnabled = cn in currentEnabled,
                             isProtected = cn in protectedServices,
                             isPinned = cn in pinnedServices,
-                            isSystem = isSystem
+                            isSystem = isSystem,
+                            seed = cn.hashCode(),
                         )
-                    } catch (_: Exception) { null }
-                }.sortedWith(
-                    compareByDescending<AccessibilityItem> { it.isPinned }
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+
+                val sorted = items.sortedWith(
+                    compareByDescending<A11yServiceItem> { it.isPinned }
                         .thenByDescending { it.isProtected }
                         .thenByDescending { it.isEnabled }
-                        .thenBy { it.appName.lowercase() }
+                        .thenBy { it.appName.lowercase() },
                 )
 
-                runOnUiThread { filterAndDisplay() }
+                runOnUiThread {
+                    allItems = sorted
+                    loading = false
+                    keepAliveEnabled = isKeepAliveServiceEnabled()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load accessibility services", e)
+                runOnUiThread { loading = false }
             }
         }.start()
     }
 
-    private fun loadIconCached(pm: PackageManager, packageName: String): android.graphics.drawable.Drawable? {
-        AppIconLoader.getCached(packageName)?.let { return it }
+    private fun loadIconBitmap(pm: PackageManager, pkg: String): androidx.compose.ui.graphics.ImageBitmap? {
+        iconCache[pkg]?.let { return it }
         return try {
-            val icon = pm.getApplicationIcon(pm.getApplicationInfo(packageName, 0))
-            AppIconLoader.put(packageName, icon)
-            icon
-        } catch (_: Exception) { null }
+            val drawable = AppIconLoader.getCached(pkg)
+                ?: pm.getApplicationIcon(pm.getApplicationInfo(pkg, 0)).also {
+                    AppIconLoader.put(pkg, it)
+                }
+            val bitmap = drawable.toBitmap(96, 96).asImageBitmap()
+            iconCache[pkg] = bitmap
+            bitmap
+        } catch (_: Exception) {
+            null
+        }
     }
 
-    private fun filterAndDisplay() {
-        var filtered = allItems
-        if (hideSystemApps) {
-            filtered = filtered.filter { !it.isSystem }
+    private fun filterItems(
+        source: List<A11yServiceItem>,
+        q: String,
+        f: A11yFilter,
+    ): List<A11yServiceItem> {
+        var list = source
+        when (f) {
+            A11yFilter.ALL -> Unit
+            A11yFilter.USER -> list = list.filter { !it.isSystem }
+            A11yFilter.PROTECTED -> list = list.filter { it.isProtected }
         }
-        if (currentQuery.isNotEmpty()) {
-            filtered = filtered.filter {
-                it.appName.lowercase().contains(currentQuery) ||
-                    it.packageName.lowercase().contains(currentQuery) ||
-                    it.serviceName.lowercase().contains(currentQuery) ||
-                    it.description.lowercase().contains(currentQuery)
+        if (q.isNotBlank()) {
+            val needle = q.trim().lowercase()
+            list = list.filter {
+                it.appName.lowercase().contains(needle) ||
+                    it.packageName.lowercase().contains(needle) ||
+                    it.serviceName.lowercase().contains(needle) ||
+                    it.description.lowercase().contains(needle)
             }
         }
-        adapter.submitList(filtered)
-        tvAccessCount.text = "${allItems.count { it.isEnabled }} / ${allItems.size} 个服务"
-        tvListHeader.text = if (currentQuery.isEmpty()) "已注册的无障碍服务 (${allItems.size})" else "搜索结果 (${filtered.size})"
+        return list
     }
 
     private fun getEnabledServices(): Set<String> {
-        val enabledServices = mutableSetOf<String>()
+        val result = mutableSetOf<String>()
         try {
-            val flat = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            val flat = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+            )
             if (!flat.isNullOrEmpty()) {
                 flat.split(':').forEach { component ->
-                    if (component.isNotBlank()) enabledServices.add(component.trim())
+                    if (component.isNotBlank()) result.add(component.trim())
                 }
             }
-        } catch (_: Exception) {}
-        return enabledServices
+        } catch (_: Exception) {
+        }
+        return result
     }
 
-    private fun toggleService(item: AccessibilityItem, enable: Boolean) {
+    private fun activeProtectedCount(): Int {
+        val userDisabled = prefs.getStringSet("user_disabled_a11y", emptySet()) ?: emptySet()
+        return protectedServices.count { it !in userDisabled }
+    }
+
+    // ------------------------------------------------------------------ 开关服务
+
+    private fun toggleService(item: A11yServiceItem, enable: Boolean) {
         if (!shizukuPermissionGranted || !serviceReady) {
             Toast.makeText(this, "需要 Shizuku 权限来管理无障碍服务", Toast.LENGTH_SHORT).show()
             return
@@ -361,19 +435,16 @@ class AccessibilityManageActivity : AppCompatActivity() {
             runOnUiThread {
                 if (result) {
                     Toast.makeText(this, if (enable) "已启用" else "已禁用", Toast.LENGTH_SHORT).show()
+                    val userDisabled = prefs.getStringSet("user_disabled_a11y", mutableSetOf())?.toMutableSet()
+                        ?: mutableSetOf()
                     if (enable && prefs.getBoolean("a11y_auto_protect", false)) {
-                        // 启用时自动加入保护列表，并从用户主动禁用列表移除
                         protectedServices.add(item.componentName)
                         prefs.edit().putStringSet("protected_a11y_services", protectedServices).apply()
-                        val userDisabled = prefs.getStringSet("user_disabled_a11y", mutableSetOf()) ?: mutableSetOf()
                         userDisabled.remove(item.componentName)
                         prefs.edit().putStringSet("user_disabled_a11y", userDisabled).apply()
                     } else if (!enable) {
-                        // 用户主动关闭：从保护列表移除，防止防回收自动恢复
                         protectedServices.remove(item.componentName)
                         prefs.edit().putStringSet("protected_a11y_services", protectedServices).apply()
-                        // 同时记录到用户主动禁用列表
-                        val userDisabled = prefs.getStringSet("user_disabled_a11y", mutableSetOf()) ?: mutableSetOf()
                         userDisabled.add(item.componentName)
                         prefs.edit().putStringSet("user_disabled_a11y", userDisabled).apply()
                     }
@@ -381,64 +452,102 @@ class AccessibilityManageActivity : AppCompatActivity() {
                     Toast.makeText(this, "操作失败", Toast.LENGTH_SHORT).show()
                 }
                 loadAccessibilityServices()
-                updateProtectStatus()
             }
         }.start()
     }
 
     private fun enableAccessibilityService(componentName: String): Boolean {
         if (!serviceReady) return false
-        try {
-            val currentEnabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-            val services = currentEnabled.split(':').filter { it.isNotBlank() }.toMutableList()
+        return try {
+            val current = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+            ) ?: ""
+            val services = current.split(':').filter { it.isNotBlank() }.toMutableList()
             if (componentName !in services) services.add(componentName)
             val newValue = services.joinToString(":")
             val success = executeCommandSync("settings put secure enabled_accessibility_services $newValue")
             executeCommandSync("settings put secure accessibility_enabled 1")
-            return success
+            success
         } catch (e: Exception) {
             Log.e(TAG, "enableAccessibilityService failed", e)
-            return false
+            false
         }
     }
 
     private fun disableAccessibilityService(componentName: String): Boolean {
         if (!serviceReady) return false
-        try {
-            val currentEnabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-            val services = currentEnabled.split(':').filter { it.isNotBlank() && it != componentName }.toMutableList()
+        return try {
+            val current = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+            ) ?: ""
+            val services = current.split(':')
+                .filter { it.isNotBlank() && it != componentName }
+                .toMutableList()
             val newValue = services.joinToString(":")
             val success = executeCommandSync("settings put secure enabled_accessibility_services $newValue")
             if (services.isEmpty()) executeCommandSync("settings put secure accessibility_enabled 0")
-            return success
+            success
         } catch (e: Exception) {
             Log.e(TAG, "disableAccessibilityService failed", e)
-            return false
+            false
         }
     }
 
-    private fun toggleProtection(item: AccessibilityItem, protect: Boolean) {
+    // ------------------------------------------------------------------ 保护 / 置顶
+
+    private fun applyAutoProtect(value: Boolean) {
+        autoProtect = value
+        prefs.edit().putBoolean("a11y_auto_protect", value).apply()
+        if (value) {
+            ensureKeepAliveEnabled()
+            autoAddEnabledToProtected()
+        }
+        loadAccessibilityServices()
+    }
+
+    private fun toggleProtection(item: A11yServiceItem, protect: Boolean) {
         if (protect) {
             protectedServices.add(item.componentName)
+            val userDisabled = prefs.getStringSet("user_disabled_a11y", mutableSetOf())?.toMutableSet()
+                ?: mutableSetOf()
+            userDisabled.remove(item.componentName)
+            prefs.edit().putStringSet("user_disabled_a11y", userDisabled).apply()
         } else {
             protectedServices.remove(item.componentName)
         }
         prefs.edit().putStringSet("protected_a11y_services", protectedServices).apply()
+        allItems = allItems.map {
+            if (it.componentName == item.componentName) it.copy(isProtected = protect) else it
+        }
         loadAccessibilityServices()
-        updateProtectStatus()
     }
 
-    private fun updateProtectStatus() {
-        val autoProtect = prefs.getBoolean("a11y_auto_protect", false)
-        val userDisabled = prefs.getStringSet("user_disabled_a11y", emptySet()) ?: emptySet()
-        val activeProtectedCount = protectedServices.count { it !in userDisabled }
-        tvProtectStatus.text = when {
-            !serviceReady && !autoProtect -> "Shizuku 未连接，无法启用保护"
-            !autoProtect -> "防回收已关闭"
-            activeProtectedCount == 0 -> "已开启，但未选择需要保护的服务"
-            else -> "保护中: $activeProtectedCount 个服务，实时监听变化"
+    private fun togglePin(item: A11yServiceItem) {
+        if (item.componentName in pinnedServices) {
+            pinnedServices.remove(item.componentName)
+            Toast.makeText(this, "已取消置顶", Toast.LENGTH_SHORT).show()
+        } else {
+            pinnedServices.add(item.componentName)
+            Toast.makeText(this, "已置顶", Toast.LENGTH_SHORT).show()
         }
+        prefs.edit().putStringSet("pinned_a11y_services", pinnedServices).apply()
+        allItems = allItems.map {
+            if (it.componentName == item.componentName) {
+                it.copy(isPinned = pinnedServices.contains(item.componentName))
+            } else {
+                it
+            }
+        }.sortedWith(
+            compareByDescending<A11yServiceItem> { it.isPinned }
+                .thenByDescending { it.isProtected }
+                .thenByDescending { it.isEnabled }
+                .thenBy { it.appName.lowercase() },
+        )
     }
+
+    // ------------------------------------------------------------------ 命令通道
 
     private fun executeCommandSync(command: String): Boolean {
         val binder = taskHideService ?: return false
@@ -449,8 +558,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
             data.writeString(command)
             binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
             reply.readException()
-            val success = reply.readInt() != 0
-            return success
+            return reply.readInt() != 0
         } catch (e: Exception) {
             Log.e(TAG, "Command failed: $command", e)
             return false
@@ -460,82 +568,30 @@ class AccessibilityManageActivity : AppCompatActivity() {
         }
     }
 
-    inner class AccessibilityListAdapter(
-        private val onToggle: (AccessibilityItem, Boolean) -> Unit,
-        private val onToggleProtect: (AccessibilityItem, Boolean) -> Unit
-    ) : RecyclerView.Adapter<AccessibilityListAdapter.VH>() {
-        private var items = listOf<AccessibilityItem>()
-        fun submitList(list: List<AccessibilityItem>) { items = list; notifyDataSetChanged() }
+    // ------------------------------------------------------------------ 右滑返回
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-            return VH(LayoutInflater.from(parent.context).inflate(R.layout.item_accessibility_service, parent, false))
-        }
-        override fun onBindViewHolder(holder: VH, position: Int) { holder.bind(items[position]) }
-        override fun getItemCount() = items.size
-
-        inner class VH(itemView: View) : RecyclerView.ViewHolder(itemView) {
-            private val ivIcon: ImageView = itemView.findViewById(R.id.ivIcon)
-            private val tvAppName: TextView = itemView.findViewById(R.id.tvAppName)
-            private val tvServiceName: TextView = itemView.findViewById(R.id.tvServiceName)
-            private val tvDescription: TextView = itemView.findViewById(R.id.tvDescription)
-            private val tvStatus: TextView = itemView.findViewById(R.id.tvStatus)
-            private val sw: SquishSwitch = itemView.findViewById(R.id.switchEnabled)
-
-            fun bind(item: AccessibilityItem) {
-                tvAppName.text = if (item.isPinned) "📌 ${item.appName}" else item.appName
-                tvServiceName.text = item.serviceName
-                Glide.with(this@AccessibilityManageActivity).load(item.icon).into(ivIcon)
-
-                if (item.description.isNotEmpty()) {
-                    tvDescription.visibility = View.VISIBLE
-                    tvDescription.text = item.description
-                } else {
-                    tvDescription.visibility = View.GONE
+    private val swipeBackDetector by lazy {
+        GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                velocityX: Float,
+                velocityY: Float,
+            ): Boolean {
+                if (e1 == null) return false
+                val diffX = e2.x - e1.x
+                val diffY = e2.y - e1.y
+                if (abs(diffX) > 100 && abs(velocityX) > 100 && abs(diffX) > abs(diffY) && diffX > 0) {
+                    finish()
+                    return true
                 }
-
-                val statusText = buildString {
-                    append(if (item.isEnabled) "已启用" else "已禁用")
-                    if (item.isProtected) append(" · 防回收保护中")
-                }
-                tvStatus.text = statusText
-                tvStatus.setTextColor(getColor(if (item.isProtected) R.color.primary else R.color.on_surface_variant))
-
-                sw.listener = null
-                sw.isChecked = item.isEnabled
-                sw.listener = { isChecked -> onToggle(item, isChecked) }
-                ivIcon.setOnClickListener { sw.toggle() }
-                itemView.setOnClickListener { sw.toggle() }
-                itemView.setOnLongClickListener { onShowItemMenu(item); true }
+                return false
             }
-        }
+        })
     }
 
-    private fun onShowItemMenu(item: AccessibilityItem) {
-        val isPinned = item.componentName in pinnedServices
-        val isProtected = item.componentName in protectedServices
-        val items = arrayOf(
-            if (isPinned) "取消置顶" else "置顶",
-            if (isProtected) "取消防回收保护" else "开启防回收保护"
-        )
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle(item.appName)
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> togglePin(item)
-                    1 -> toggleProtection(item, !isProtected)
-                }
-            }
-            .setNegativeButton("关闭", null)
-            .show()
-    }
-
-    private fun togglePin(item: AccessibilityItem) {
-        if (item.componentName in pinnedServices) {
-            pinnedServices.remove(item.componentName)
-        } else {
-            pinnedServices.add(item.componentName)
-        }
-        prefs.edit().putStringSet("pinned_a11y_services", pinnedServices).apply()
-        loadAccessibilityServices()
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        swipeBackDetector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
     }
 }
