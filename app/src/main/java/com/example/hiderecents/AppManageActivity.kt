@@ -142,7 +142,7 @@ class AppManageActivity : AppCompatActivity() {
                     filter = filter,
                     onFilterChange = { filter = it },
                     loading = loading,
-                    onBack = { finish() },
+                    onBack = { goBack() },
                     onToggleHide = { app, hide -> toggleAppVisibility(app.packageName, hide) },
                     onOpenActions = { actionApp = it },
                     onRestoreAll = { restoreAll() },
@@ -210,6 +210,27 @@ class AppManageActivity : AppCompatActivity() {
         Shizuku.addBinderDeadListener(binderDeadListener)
         checkShizukuPermission()
         loadInstalledApps()
+    }
+
+    /**
+     * 返回上一页。
+     *
+     * 为什么不能只调 finish()：SplashActivity 的「热恢复」分支会
+     * startActivity(上次页面) 然后 finish() 自己，于是那个页面就成了任务根，
+     * 栈里它下面什么都没有 —— 这时 finish() 直接退回桌面。
+     * 兜底：如果自己已经是任务根，先拉起工具箱再结束自己，
+     * 保证返回永远落在应用内的上一页。
+     */
+    private fun goBack() {
+        if (isTaskRoot) {
+            startActivity(Intent(this, ToolboxActivity::class.java))
+        }
+        finish()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        goBack()
     }
 
     override fun onDestroy() {
@@ -387,15 +408,24 @@ class AppManageActivity : AppCompatActivity() {
                         prefs.edit().putStringSet("hidden_apps", hiddenApps).apply()
                         Toast.makeText(this, "已从最近任务隐藏", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(this, "隐藏失败", Toast.LENGTH_SHORT).show()
+                        // 现在的隐藏是「标记任务不进最近任务」，需要该应用当前有运行中的任务。
+                        // 任务不存在时不再谎报成功，也不回退到会杀进程的 removeTask。
+                        Toast.makeText(this, "隐藏失败：应用当前未在运行", Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    hiddenApps.remove(packageName)
-                    prefs.edit().putStringSet("hidden_apps", hiddenApps).apply()
-                    if (hiddenApps.isEmpty()) {
-                        prefs.edit().putBoolean("all_hidden", false).apply()
+                    // 取消隐藏必须等「清掉标记」真的成功，否则会出现
+                    // 「开关关了，应用还是不出现在最近任务里」——旧实现就是
+                    // 无论成功与否都从 hiddenApps 里删掉并报「已恢复」。
+                    if (success) {
+                        hiddenApps.remove(packageName)
+                        prefs.edit().putStringSet("hidden_apps", hiddenApps).apply()
+                        if (hiddenApps.isEmpty()) {
+                            prefs.edit().putBoolean("all_hidden", false).apply()
+                        }
+                        Toast.makeText(this, "已恢复", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "恢复失败：清除「不进最近任务」标记没成功", Toast.LENGTH_SHORT).show()
                     }
-                    Toast.makeText(this, "已恢复", Toast.LENGTH_SHORT).show()
                 }
                 allApps = sortApps(
                     allApps.map {

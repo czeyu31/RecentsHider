@@ -50,6 +50,27 @@ class SplashActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // 情况一：任务栈里已经压着页面（isTaskRoot = false）。
+        // 点图标时系统会把 Splash 压到原页面之上，这里直接结束自己，
+        // 下面那个页面就露出来了 —— 不开屏，也不跳首页。
+        if (!isTaskRoot) {
+            finish()
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+            return
+        }
+
+        // 情况二：进程还活着（例如保活服务把进程留着），但任务栈被系统清掉了。
+        // 这时任务里没有可露出的页面，直接回到上次停留的页面，同样不播开屏。
+        val warmTarget = AppSession.lastActivityName()
+        if (warmTarget != null && warmTarget != SplashActivity::class.java.name) {
+            runCatching { startActivity(Intent().setClassName(this, warmTarget)) }
+            finish()
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+            return
+        }
+
         val prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         val theme = AppTheme.fromPref(prefs.getString("ui_theme", null))
         applySystemBars(theme)

@@ -25,9 +25,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.hiderecents.ui.components.paperHeaderRule
 import com.example.hiderecents.ui.components.AppIconTile
 import com.example.hiderecents.ui.components.BreathingDot
@@ -62,6 +65,8 @@ data class HomeUiState(
     /** 运行时长：数值与单位分开，方便大号数字排版 */
     val uptimeValue: String = "—",
     val uptimeUnit: String = "",
+    /** 电池温度（摄氏度，一位小数）；读不到时是「—」 */
+    val batteryTemp: String = "—",
 )
 
 @Composable
@@ -223,22 +228,46 @@ fun HomeScreen(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = "运行 " + state.uptimeValue + " " + state.uptimeUnit,
+                                text = "运行 " + state.uptimeValue + " " + state.uptimeUnit +
+                                    " · 温度 " + state.batteryTemp + " °C",
                                 style = type.label,
                                 color = colors.inkFaint,
                             )
                         }
                     }
                 } else {
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        FactColumn("已隐藏", state.hiddenCount.toString(), "个应用", Modifier.weight(1f))
-                        Box(Modifier.width(1.dp).height(44.dp).background(color = colors.hairline))
-                        FactColumn("守护中", state.protectedCount.toString(), "个服务", Modifier.weight(1f).padding(start = 20.dp))
-                        Box(Modifier.width(1.dp).height(44.dp).background(color = colors.hairline))
-                        FactColumn("运行", state.uptimeValue, state.uptimeUnit, Modifier.weight(1f).padding(start = 20.dp))
+                    // 三列大数字 + 一行运行时长小字。
+                    // 为什么不放四列：四等分后每列只有约 64dp，而「14」+「天 0 时」
+                    // 至少要 83dp，无论怎么调字号都会换行或被裁切（实测「时」和「°C」
+                    // 就被切掉了）。把运行时长降为次级信息、用整行小字承载，才彻底解决。
+                    // 这样纸本与石墨的信息层级也一致：石墨本来就是「运行 X · 温度 Y」小字行。
+                    Column {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 16.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            FactColumn("已隐藏", state.hiddenCount.toString(), "个应用", Modifier.weight(1f))
+                            Box(Modifier.width(1.dp).height(44.dp).background(color = colors.hairline))
+                            FactColumn("守护中", state.protectedCount.toString(), "个服务", Modifier.weight(1f).padding(start = 20.dp))
+                            Box(Modifier.width(1.dp).height(44.dp).background(color = colors.hairline))
+                            FactColumn("温度", state.batteryTemp, "°C", Modifier.weight(1f).padding(start = 20.dp))
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(4.dp)
+                                    .clip(RoundedCornerShape(percent = 50))
+                                    .background(color = colors.accent.copy(alpha = 0.8f)),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "运行 " + state.uptimeValue + " " + state.uptimeUnit,
+                                style = type.label,
+                                color = colors.inkFaint,
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
             }
@@ -318,7 +347,7 @@ fun HomeScreen(
                 Text("工作方式", style = type.label, color = colors.inkFaint)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "隐藏通过 Shizuku 的 removeTask 实现，保活通过 settings put secure 写入，全部在本机执行。",
+                    text = "隐藏通过 Shizuku 把任务标记为「不进最近任务」实现（不会结束应用），保活通过 settings put secure 写入，全部在本机执行。",
                     style = type.body,
                     color = colors.inkMuted,
                 )
@@ -423,8 +452,41 @@ private fun FactColumn(label: String, value: String, unit: String, modifier: Mod
         Row(verticalAlignment = Alignment.Bottom) {
             Text(value, style = type.numberSmall, color = colors.ink)
             Spacer(Modifier.width(5.dp))
-            Text(unit, style = type.caption, color = colors.inkMuted, modifier = Modifier.padding(bottom = 3.dp))
+            Text(
+                text = unitWithReadableDigits(unit),
+                style = type.caption,
+                color = colors.inkMuted,
+                // 禁止换行：复合单位（天 / 时）被折断成两行比字小更难看
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.padding(bottom = 3.dp),
+            )
         }
+    }
+}
+
+/**
+ * 单位串里的数字单独放大。
+ *
+ * 问题：运行时长是「14 天 0 时」这种复合单位，整串按 caption(11sp) 渲染时，
+ * 里面的 0 / 23 会和中文一样小，在大号数字旁边看起来像个错字。
+ * 处理：按「数字段 / 非数字段」切分，数字段提到 15sp + 中等字重，中文字保持 11sp。
+ */
+private fun unitWithReadableDigits(unit: String): AnnotatedString = buildAnnotatedString {
+    var i = 0
+    while (i < unit.length) {
+        val isDigit = unit[i].isDigit()
+        var j = i
+        while (j < unit.length && unit[j].isDigit() == isDigit) j++
+        val chunk = unit.substring(i, j)
+        if (isDigit) {
+            // 13sp 而不是 15sp：15sp 时「14 天 0 时」在四等分列宽里会换行，
+            // 13sp 仍明显大于中文的 11sp（0 不再是个小点），但整串能放进一行。
+            withStyle(SpanStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium)) { append(chunk) }
+        } else {
+            append(chunk)
+        }
+        i = j
     }
 }
 

@@ -11,15 +11,15 @@ android {
         applicationId = "com.tools.systemtool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 310
-        versionName = "3.0.0"
+        versionCode = 397
+        versionName = "3.0.1"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             isDebuggable = false
-            // 用 debug keystore 签名，保证与已安装的 debug 包同签名、可原地覆盖升级
+            // 用 debug keystore 签名，保证可原地覆盖同签名的旧包
             signingConfig = signingConfigs.getByName("debug")
         }
     }

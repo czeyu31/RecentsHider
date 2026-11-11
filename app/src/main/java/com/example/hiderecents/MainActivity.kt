@@ -1,12 +1,15 @@
 package com.example.hiderecents
 
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -168,6 +171,10 @@ class MainActivity : AppCompatActivity() {
         applyExcludeFromRecents(prefs.getBoolean("hide_from_recents", false))
         updateStatusNotification()
         syncKeepAliveService()
+
+        // 注册即拿到当前温度（sticky 广播的返回值就是最近一次的值）
+        val stickyBattery = registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        stickyBattery?.let { applyBatteryTemperature(it) }
     }
 
     // ------------------------------------------------------------------ 主题
@@ -285,6 +292,7 @@ class MainActivity : AppCompatActivity() {
             uptimeValue = uptimeValue,
             uptimeUnit = uptimeUnit,
         )
+
 
         loadHiddenPreview(hidden)
     }
@@ -755,6 +763,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ------------------------------------------------------------------ 电池温度
+
+    /**
+     * 电池温度接收器。
+     *
+     * 系统每 10 秒左右主动广播一次 ACTION_BATTERY_CHANGED，比自己轮询省电，
+     * 而且不需要任何权限。这是应用进程在 Android 15 上唯一稳定可读的温度源。
+     */
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_BATTERY_CHANGED) {
+                applyBatteryTemperature(intent)
+            }
+        }
+    }
+
+    private fun applyBatteryTemperature(intent: Intent) {
+        val tenths = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+        val text = if (tenths == Int.MIN_VALUE || tenths <= 0) {
+            "—"
+        } else {
+            String.format(java.util.Locale.US, "%.1f", tenths / 10f)
+        }
+        if (text != homeState.batteryTemp) {
+            homeState = homeState.copy(batteryTemp = text)
+        }
+        // 温度变了就同步岛上的状态（内部按「数量|温度」去重，不会刷屏）
+        Unit
+    }
+
     // ------------------------------------------------------------------ 生命周期
 
     /** 运行时长每分钟刷新一次，不用整页轮询 */
@@ -781,6 +819,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(batteryReceiver)
+        } catch (_: Exception) {
+        }
         handler.removeCallbacksAndMessages(null)
         Shizuku.removeRequestPermissionResultListener(shizukuPermissionResultListener)
         Shizuku.removeBinderReceivedListener(binderReceivedListener)

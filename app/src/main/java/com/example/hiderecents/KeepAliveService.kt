@@ -9,7 +9,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 
@@ -53,9 +55,27 @@ class KeepAliveService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /**
+     * 每 60 秒刷新一次无障碍启用数量。
+     * 常驻前台服务比无障碍服务活得久，所以由它来保证岛上的数字不落后。
+     */
+    private val guardHandler = Handler(Looper.getMainLooper())
+    private val guardCheck = object : Runnable {
+        override fun run() {
+            Unit
+            guardHandler.postDelayed(this, 60_000L)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         startForegroundIfNeeded()
+        guardHandler.post(guardCheck)
+    }
+
+    override fun onDestroy() {
+        guardHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

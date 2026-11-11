@@ -295,15 +295,17 @@ class AccessibilityKeepAliveService : AccessibilityService() {
         val myCn = ComponentName(this, AccessibilityKeepAliveService::class.java).flattenToString()
         val myCnShort = "$packageName/${AccessibilityKeepAliveService::class.java.name}"
 
-        if (!current.contains(myCn) && !current.contains(myCnShort)) {
-            Log.w(TAG, "Keep-alive service itself was removed! Re-enabling...")
-            val services = current.split(':').filter { it.isNotBlank() }.toMutableList()
-            services.add(myCn)
-            writeSecureSetting(services.joinToString(":"))
-            try {
-                writeSecureSettingDirect("accessibility_enabled", "1")
-            } catch (_: Exception) {}
-        }
+        val listed = current.contains(myCn) || current.contains(myCnShort)
+        if (listed) return
+
+        Log.w(TAG, "Keep-alive service itself was removed! Re-enabling...")
+
+        val services = current.split(':').filter { it.isNotBlank() }.toMutableList()
+        services.add(myCn)
+        writeSecureSetting(services.joinToString(":"))
+        try {
+            writeSecureSettingDirect("accessibility_enabled", "1")
+        } catch (_: Exception) {}
     }
 
     // ── Settings write ──

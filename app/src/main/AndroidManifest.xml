@@ -4,6 +4,14 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+        Android 16 Live Updates（置顶通知 / 实况更新）。
+
+        为什么这次要加：参考应用 com.spark.noticeflow 是 targetSdk=36 且声明了这条权限，
+        在不需要小米 XMS 白名单的情况下就能出岛；我们 targetSdk=34、没声明，
+        所以一直卡在 FocusPlugin onAuthFailed（capability = -135266497）。
+        本机已确认该权限存在：prot=normal|appop，属于声明即授予的 normal 级。
+    -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -24,6 +32,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
     <application
+        android:name=".DshApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"

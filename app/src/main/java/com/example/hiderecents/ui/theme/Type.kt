@@ -44,6 +44,17 @@ private val MonoFamily = FontFamily(
  */
 private val SansFamily = FontFamily.Default
 
+/**
+ * 中式衬线字族（纸本专用）。
+ *
+ * 用系统 serif 而不是打包字体：MIUI / AOSP 的 serif 在中文上解析为 Noto Serif CJK，
+ * 正是宋体骨架（横细竖粗、起笔有顿），符合纸本的气质；
+ * 打包一套思源宋体会让 APK 增加 8~10MB，对一个工具类应用不划算。
+ *
+ * 只给纸本的 display / number / numberSmall 用，石墨仍走无衬线。
+ */
+private val SerifFamily = FontFamily.Serif
+
 @Immutable
 data class DshType(
     /** 首页状态主标题 */
@@ -72,7 +83,7 @@ data class DshType(
 
 val PaperType = DshType(
     display = TextStyle(
-        fontFamily = SansFamily,
+        fontFamily = SerifFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 44.sp,
         lineHeight = 48.sp,
@@ -141,7 +152,7 @@ val PaperType = DshType(
         letterSpacing = 0.2.sp,
     ),
     number = TextStyle(
-        fontFamily = SansFamily,
+        fontFamily = SerifFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 34.sp,
         fontFeatureSettings = "tnum",
@@ -149,7 +160,7 @@ val PaperType = DshType(
         letterSpacing = (-0.8f).sp,
     ),
     numberSmall = TextStyle(
-        fontFamily = SansFamily,
+        fontFamily = SerifFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 27.sp,
         fontFeatureSettings = "tnum",
