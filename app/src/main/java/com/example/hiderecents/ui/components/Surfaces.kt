@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -47,7 +48,7 @@ import com.example.hiderecents.ui.theme.rememberMotionEnabled
 /** 自绘图标集：统一 24x24 坐标系、1.5dp 描边、圆头端点。不使用 Material 图标库默认形状。 */
 enum class DshIconKind {
     GEAR, GRID, SHIELD, CHEVRON, SEARCH, TERMINAL, BELL, PACKAGE, TRANSFER, MENU, ARROW_LEFT, ARROW_RIGHT,
-    FILE, IMAGE, CLIPBOARD, FOLDER
+    FILE, IMAGE, CLIPBOARD, FOLDER, BACK, SLIDERS
 }
 
 /** 画布背景：主题底色的纵向渐变（纸本是纸面提亮到纸影，石墨是冷石墨到更深的底）。 */
@@ -172,6 +173,15 @@ fun DshIcon(
         }
 
         when (kind) {
+            DshIconKind.SLIDERS -> {
+                line(4f, 7f, 20f, 7f)
+                drawCircle(color = tint, radius = 2f * u, center = Offset(9f * u, 7f * u), style = stroke)
+                line(4f, 12f, 20f, 12f)
+                drawCircle(color = tint, radius = 2f * u, center = Offset(15f * u, 12f * u), style = stroke)
+                line(4f, 17f, 20f, 17f)
+                drawCircle(color = tint, radius = 2f * u, center = Offset(8f * u, 17f * u), style = stroke)
+            }
+
             DshIconKind.GEAR -> {
                 drawCircle(color = tint, radius = 3.1f * u, center = Offset(12f * u, 12f * u), style = stroke)
                 line(12f, 3.2f, 12f, 5.4f)
@@ -370,6 +380,15 @@ fun DshIcon(
                 drawPath(p, tint, style = stroke)
             }
 
+            DshIconKind.BACK -> {
+                val p = Path().apply {
+                    moveTo(15f * u, 5f * u)
+                    lineTo(8f * u, 12f * u)
+                    lineTo(15f * u, 19f * u)
+                }
+                drawPath(p, tint, style = stroke)
+            }
+
             DshIconKind.ARROW_LEFT -> {
                 line(20f, 12f, 5f, 12f)
                 val p = Path().apply {
@@ -535,4 +554,61 @@ fun MiniToggle(
         Spacer(Modifier.width(7.dp))
         Text(label, style = Dsh.type.label, color = colors.inkFaint)
     }
+}
+
+/**
+ * 纸本顶栏底线：参考图里顶栏下方是一条 1.5dp 墨黑实线。
+ * 石墨不加线——面板本身的分层已经承担了分隔。
+ */
+@Composable
+fun Modifier.paperHeaderRule(): Modifier {
+    val hasPanels = Dsh.surface.hasPanels
+    val ink = Dsh.colors.ink
+    return if (hasPanels) {
+        this
+    } else {
+        this.drawBehind {
+            drawLine(
+                color = ink,
+                start = Offset(0f, size.height),
+                end = Offset(size.width, size.height),
+                strokeWidth = 1.5.dp.toPx(),
+            )
+        }
+    }
+}
+
+/**
+ * 点状引导线：纸本入口行里标题与说明之间的那排小点。
+ * 用 Canvas 逐点画，而不是虚线边框——虚线的 dash 节奏在窄屏上会断得很难看。
+ */
+@Composable
+fun DottedLeader(
+    modifier: Modifier = Modifier,
+    color: Color = Dsh.colors.hairlineStrong,
+) {
+    val dot = color
+    Canvas(modifier.height(1.dp)) {
+        val radius = 0.8.dp.toPx()
+        val step = 4.dp.toPx()
+        var x = 0f
+        val cy = size.height / 2f
+        while (x < size.width) {
+            drawCircle(color = dot, radius = radius, center = Offset(x, cy))
+            x += step
+        }
+    }
+}
+
+/**
+ * 输入框 / 胶囊 / 提示条的底色。
+ *
+ * 为什么需要它：纸本主题里 panelTop 是全透明 Color(0x00000000)，
+ * 直接 panelTop.copy(alpha = 0.5f) 会得到 50% 纯黑 —— 落在米白纸上就是一块脏灰，
+ * ADB 页的快捷命令块就是这么变灰的。纸本不用填充色，靠 1px 描边分层。
+ */
+@Composable
+fun dshFieldFill(alpha: Float = 0.55f): Color {
+    val colors = Dsh.colors
+    return if (Dsh.surface.hasPanels) colors.panelTop.copy(alpha = alpha) else Color.Transparent
 }

@@ -40,9 +40,15 @@
 
 ## 3. 排版
 
-- Display：Outfit（拉丁）／系统 CJK 回退（MiSans）— 字重 500，字距 -0.03em
-- Body：Outfit 300/400 — 行高 1.55，最大 30ch
-- Mono：JetBrains Mono — 所有数字、包名、版本号、地址，启用 tabular-nums
+- Display：系统字族（MiSans / Roboto）— 字重 500，字距 -0.03em
+- Body：系统字族 400 — 行高 1.55，最大 30ch
+- Mono：Roboto Mono — 所有数字、包名、版本号、地址，启用 tabular-nums
+
+修订记录（2026-11-11）：原定 Outfit + JetBrains Mono，真机验证后更换，原因是两个已证实的问题——
+1) Outfit 不含 CJK 字形，中文走系统回退时字重不生效，渲染成发丝级字重、整体发虚；
+2) JetBrains Mono 的零是点状零（oval + 中心点），31sp 大数字上看起来像字符坏掉。
+可变字体必须显式传 `FontVariation.Settings(FontVariation.weight(n))`，否则所有字重塌到同一个默认实例。
+Outfit 与 JetBrains Mono 仍保留在 `res/font/` 备用。
 - 标签：JetBrains Mono 9.5–11sp，字距 0.2em，全大写
 
 ### 字阶

@@ -1,6 +1,8 @@
 package com.example.hiderecents.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,9 +21,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.example.hiderecents.BuildConfig
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.DshIcon
@@ -40,10 +45,14 @@ fun SettingsDialog(
     statusNotification: Boolean,
     excludeFromRecents: Boolean,
     hiddenCount: Int,
+    hideGuard: Boolean,
+    relaunchOnUnhide: Boolean,
     onThemeChange: (AppTheme) -> Unit,
     onToggleKeepAlive: (Boolean) -> Unit,
     onToggleNotification: (Boolean) -> Unit,
     onToggleExclude: (Boolean) -> Unit,
+    onHideGuardChange: (Boolean) -> Unit,
+    onRelaunchOnUnhideChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val colors = Dsh.colors
@@ -53,13 +62,13 @@ fun SettingsDialog(
         Box(
             Modifier
                 .fillMaxWidth()
-                .heightIn(max = 620.dp)
+                .heightIn(max = 720.dp)
                 .clip(RoundedCornerShape(Dsh.dimens.panelRadius))
                 .background(color = colors.canvas)
                 .border(1.dp, colors.hairlineStrong, RoundedCornerShape(Dsh.dimens.panelRadius))
                 .padding(horizontal = 20.dp, vertical = 20.dp),
         ) {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("设置", style = type.h2, color = colors.ink)
                     Spacer(Modifier.weight(1f))
@@ -67,7 +76,13 @@ fun SettingsDialog(
                         Modifier
                             .size(30.dp)
                             .clip(RoundedCornerShape(Dsh.dimens.iconRadius))
-                            .border(1.dp, colors.hairline, RoundedCornerShape(Dsh.dimens.iconRadius))
+                            .then(
+                                if (Dsh.surface.hasPanels) {
+                                    Modifier.border(1.dp, colors.hairline, RoundedCornerShape(Dsh.dimens.iconRadius))
+                                } else {
+                                    Modifier
+                                },
+                            )
                             .dshClickable(onClick = onDismiss),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -122,12 +137,36 @@ fun SettingsDialog(
                     checked = keepAlive,
                     onCheckedChange = onToggleKeepAlive,
                 )
+                DshDivider()
+                SettingSwitchRow(
+                    title = "恢复时回到前台",
+                    desc = "关闭后取消隐藏不会把应用拉到前台",
+                    checked = relaunchOnUnhide,
+                    onCheckedChange = onRelaunchOnUnhideChange,
+                )
+
+                Spacer(Modifier.height(22.dp))
+                SectionHeader("隐藏策略")
+                Spacer(Modifier.height(10.dp))
+
+                ThemeOption(
+                    label = "持续守护",
+                    desc = "重新打开被隐藏的应用，也会在数秒内从最近任务消失",
+                    selected = hideGuard,
+                    onClick = { onHideGuardChange(true) },
+                )
+                ThemeOption(
+                    label = "仅一次生效",
+                    desc = "只在打开开关那一刻隐藏当前任务，之后不再干预",
+                    selected = !hideGuard,
+                    onClick = { onHideGuardChange(false) },
+                )
 
                 Spacer(Modifier.height(20.dp))
                 DshDivider()
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("System Tool · v30.0", style = type.monoSmall, color = colors.inkFaint)
+                    Text("System Tool · v" + BuildConfig.VERSION_NAME, style = type.monoSmall, color = colors.inkFaint)
                     Spacer(Modifier.weight(1f))
                     Text("已隐藏 $hiddenCount 个应用", style = type.monoSmall, color = colors.inkFaint)
                 }
@@ -147,15 +186,39 @@ private fun ThemeOption(
     val type = Dsh.type
     val shape = RoundedCornerShape(Dsh.dimens.controlRadius)
 
+    val hasPanels = Dsh.surface.hasPanels
+
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp)
-            .clip(shape)
-            .background(color = if (selected) colors.accentDim else Color.Transparent)
-            .border(1.dp, if (selected) colors.accentBorder else colors.hairline, shape)
+            .padding(vertical = if (hasPanels) 3.dp else 0.dp)
+            .then(
+                if (hasPanels) {
+                    Modifier
+                        .clip(shape)
+                        .background(color = if (selected) colors.accentDim else Color.Transparent)
+                        .border(1.dp, if (selected) colors.accentBorder else colors.hairline, shape)
+                } else {
+                    Modifier.drawBehind {
+                        drawLine(
+                            color = colors.hairline,
+                            start = Offset(0f, size.height),
+                            end = Offset(size.width, size.height),
+                            strokeWidth = 1.dp.toPx(),
+                        )
+                        if (selected) {
+                            drawLine(
+                                color = colors.accent,
+                                start = Offset(0f, 0f),
+                                end = Offset(0f, size.height),
+                                strokeWidth = 2.dp.toPx(),
+                            )
+                        }
+                    }
+                },
+            )
             .dshClickable(scaleOnPress = false, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = if (hasPanels) 14.dp else 12.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -211,12 +274,20 @@ private fun SettingSwitchRow(
 
 @Composable
 fun KeepAliveGuideDialog(
+    batteryOk: Boolean,
+    autoStartOk: Boolean,
+    autoStartUnknown: Boolean,
+    manualAutoStart: Boolean,
     onOpenBatterySettings: () -> Unit,
     onOpenAutoStartSettings: () -> Unit,
+    onManualAutoStartChange: (Boolean) -> Unit,
+    onRecheck: () -> Unit,
+    onFinish: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val colors = Dsh.colors
     val type = Dsh.type
+    val allOk = batteryOk && autoStartOk
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -229,35 +300,96 @@ fun KeepAliveGuideDialog(
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    DshIcon(DshIconKind.SHIELD, iconSize = 16.dp, tint = colors.accent)
-                    Spacer(Modifier.width(9.dp))
-                    Text("后台保活设置引导", style = type.h2, color = colors.ink)
+                    Text("后台保活设置", style = type.h2, color = colors.ink)
+                    Spacer(Modifier.weight(1f))
+                    Box(
+                        Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(percent = 50))
+                            .dshClickable(scaleOnPress = false, onClick = onDismiss),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("×", style = type.rowTitle, color = colors.inkMuted)
+                    }
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
                 Text(
-                    "后台保活已开启。还需要在系统里完成两步，应用才不会被杀掉：",
-                    style = type.body,
-                    color = colors.inkMuted,
+                    text = if (allOk) "两项设置都已就绪，点「完成」即可开启保活" else "请先把下面两项都设置好，保活开关才会真正打开",
+                    style = type.caption,
+                    color = colors.inkFaint,
                 )
-                Spacer(Modifier.height(14.dp))
-                GuideLine("01", "关闭电池优化，选择「不限制」")
-                Spacer(Modifier.height(10.dp))
-                GuideLine("02", "允许自启动，并在最近任务里锁定本应用")
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(18.dp))
+
+                KeepAliveGuideRow(
+                    title = "电池优化",
+                    desc = "关闭对本应用的电池优化",
+                    ok = batteryOk,
+                    onOpen = onOpenBatterySettings,
+                )
+                Spacer(Modifier.height(12.dp))
+                KeepAliveGuideRow(
+                    title = "自启动",
+                    desc = "允许本应用后台自启动",
+                    ok = autoStartOk,
+                    onOpen = onOpenAutoStartSettings,
+                )
+
+                if (autoStartUnknown) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("我已手动允许自启动", style = type.rowTitle, color = colors.ink)
+                            Spacer(Modifier.height(4.dp))
+                            Text("本机读不到自启动状态，请自行确认后打开", style = type.caption, color = colors.inkFaint)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        DshSwitch(checked = manualAutoStart, onCheckedChange = onManualAutoStartChange)
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Box(Modifier.weight(1f)) {
-                        DshGhostButton("电池优化", onClick = onOpenBatterySettings, modifier = Modifier.fillMaxWidth())
+                        DshGhostButton(
+                            text = "重新检测",
+                            onClick = onRecheck,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                     Box(Modifier.weight(1f)) {
-                        DshGhostButton("自启动", onClick = onOpenAutoStartSettings, modifier = Modifier.fillMaxWidth())
+                        DshGhostButton(
+                            text = if (allOk) "完成" else "稍后再说",
+                            onClick = { if (allOk) onFinish() else onDismiss() },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
-                }
-                Spacer(Modifier.height(10.dp))
-                Box(Modifier.fillMaxWidth()) {
-                    DshGhostButton("我知道了", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun KeepAliveGuideRow(
+    title: String,
+    desc: String,
+    ok: Boolean,
+    onOpen: () -> Unit,
+) {
+    val colors = Dsh.colors
+    val type = Dsh.type
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = type.rowTitle, color = colors.ink)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = if (ok) "已设置" else desc,
+                style = type.caption,
+                color = if (ok) colors.accent else colors.inkFaint,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        DshGhostButton(text = if (ok) "已开启" else "去设置", onClick = onOpen)
     }
 }
 

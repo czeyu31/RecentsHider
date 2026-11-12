@@ -148,7 +148,7 @@ class AccessibilityKeepAliveService : AccessibilityService() {
             rikka.shizuku.Shizuku.bindUserService(
                 rikka.shizuku.Shizuku.UserServiceArgs(
                     ComponentName(this, TaskHideService::class.java)
-                ).daemon(true).processNameSuffix("taskhide").debuggable(true).version(1),
+                ).daemon(true).processNameSuffix("taskhide").debuggable(true).version(2),
                 serviceConnection
             )
         } catch (e: Exception) {
@@ -225,14 +225,10 @@ class AccessibilityKeepAliveService : AccessibilityService() {
             val triggerAt = System.currentTimeMillis() + CHECK_INTERVAL
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                // setAlarmClock is exempt from Doze and battery optimization
-                // It shows an alarm icon in status bar, but is the most reliable way
-                val showIntent = PendingIntent.getActivity(
-                    this, 1,
-                    Intent(this, MainActivity::class.java),
-                    PendingIntent.FLAG_IMMUTABLE
-                )
-                am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAt, showIntent), pending)
+                // 用 setAndAllowWhileIdle 而不是 setAlarmClock：
+                // setAlarmClock 会在状态栏挂一个闹钟图标，用户会误以为设了闹钟；
+                // setAndAllowWhileIdle 同样能在 Doze 下唤醒，且不需要 SCHEDULE_EXACT_ALARM 权限。
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
             } else {
                 am.setRepeating(AlarmManager.RTC_WAKEUP, triggerAt, CHECK_INTERVAL, pending)
             }
@@ -299,15 +295,17 @@ class AccessibilityKeepAliveService : AccessibilityService() {
         val myCn = ComponentName(this, AccessibilityKeepAliveService::class.java).flattenToString()
         val myCnShort = "$packageName/${AccessibilityKeepAliveService::class.java.name}"
 
-        if (!current.contains(myCn) && !current.contains(myCnShort)) {
-            Log.w(TAG, "Keep-alive service itself was removed! Re-enabling...")
-            val services = current.split(':').filter { it.isNotBlank() }.toMutableList()
-            services.add(myCn)
-            writeSecureSetting(services.joinToString(":"))
-            try {
-                writeSecureSettingDirect("accessibility_enabled", "1")
-            } catch (_: Exception) {}
-        }
+        val listed = current.contains(myCn) || current.contains(myCnShort)
+        if (listed) return
+
+        Log.w(TAG, "Keep-alive service itself was removed! Re-enabling...")
+
+        val services = current.split(':').filter { it.isNotBlank() }.toMutableList()
+        services.add(myCn)
+        writeSecureSetting(services.joinToString(":"))
+        try {
+            writeSecureSettingDirect("accessibility_enabled", "1")
+        } catch (_: Exception) {}
     }
 
     // ── Settings write ──

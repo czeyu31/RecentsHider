@@ -194,6 +194,7 @@ fun BreathingDot(
 fun StaggeredEnter(
     index: Int = 0,
     enabled: Boolean = true,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val motion = Dsh.motion
@@ -217,7 +218,7 @@ fun StaggeredEnter(
     )
 
     Box(
-        Modifier.graphicsLayer {
+        modifier.graphicsLayer {
             alpha = progress
             translationY = (1f - progress) * risePx
         },
@@ -253,17 +254,26 @@ fun DshSwitch(
         label = "dshSwitchThumb",
     )
     val trackColor by animateColorAsState(
-        targetValue = if (checked) colors.accentDim else colors.track,
+        targetValue = when {
+            checked -> if (hasPanels) colors.accentDim else colors.accent
+            else -> if (hasPanels) colors.track else Color.Transparent
+        },
         animationSpec = MotionSpecs.color(motion, motionEnabled),
         label = "dshSwitchTrack",
     )
     val borderColor by animateColorAsState(
-        targetValue = if (checked) colors.accentBorder else colors.hairline,
+        targetValue = when {
+            checked -> colors.accentBorder
+            else -> if (hasPanels) colors.hairline else colors.hairlineStrong
+        },
         animationSpec = MotionSpecs.color(motion, motionEnabled),
         label = "dshSwitchBorder",
     )
     val thumbColor by animateColorAsState(
-        targetValue = if (checked) colors.accent else colors.knob,
+        targetValue = when {
+            checked -> if (hasPanels) colors.accent else colors.accentInk
+            else -> if (hasPanels) colors.knob else colors.inkMuted
+        },
         animationSpec = MotionSpecs.color(motion, motionEnabled),
         label = "dshSwitchThumbColor",
     )

@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -38,8 +38,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.hiderecents.ui.components.paperHeaderRule
 import com.example.hiderecents.ui.components.AppIconTile
 import com.example.hiderecents.ui.components.DshDivider
+import com.example.hiderecents.ui.components.dshFieldFill
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.DshIcon
 import com.example.hiderecents.ui.components.DshIconKind
@@ -91,14 +93,14 @@ fun NotificationHistoryScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .systemBarsPadding()
+                .safeDrawingPadding()
                 .padding(horizontal = dimens.screenPadding),
         ) {
             Spacer(Modifier.height(4.dp))
 
             // ---------------- 顶栏 ----------------
             Row(
-                Modifier.fillMaxWidth().height(56.dp),
+                Modifier.fillMaxWidth().height(56.dp).paperHeaderRule(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
@@ -108,7 +110,7 @@ fun NotificationHistoryScreen(
                         .dshClickable(onClick = onBack),
                     contentAlignment = Alignment.Center,
                 ) {
-                    DshIcon(DshIconKind.ARROW_LEFT, iconSize = 15.dp, tint = colors.inkMuted)
+                    DshIcon(DshIconKind.BACK, iconSize = 15.dp, tint = colors.inkMuted)
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
@@ -148,7 +150,7 @@ fun NotificationHistoryScreen(
                 StaggeredEnter(index = 0) {
                     PermissionBanner(onClick = onRequestPermission)
                 }
-                Spacer(Modifier.height(dimens.gapM))
+                Spacer(Modifier.height(if (Dsh.surface.hasPanels) dimens.gapM else 22.dp))
             }
 
             // ---------------- 应用 chips ----------------
@@ -297,7 +299,7 @@ private fun ChipItem(label: String, selected: Boolean, onClick: () -> Unit) {
                 color = when {
                     selected && surface.hasPanels -> colors.accentDim
                     selected -> Color.Transparent
-                    else -> colors.panelTop.copy(alpha = 0.5f)
+                    else -> dshFieldFill(0.5f)
                 },
             )
             .border(

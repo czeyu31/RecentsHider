@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.hiderecents.ui.components.DshDivider
+import com.example.hiderecents.ui.components.dshFieldFill
 import com.example.hiderecents.ui.components.DshIcon
 import com.example.hiderecents.ui.components.DshIconKind
 import com.example.hiderecents.ui.components.StaggeredEnter
@@ -130,7 +131,7 @@ fun FileTransferScreen(
     val type = Dsh.type
 
     Box(modifier.fillMaxSize().dshCanvasBackground()) {
-        Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             Spacer(Modifier.height(4.dp))
 
             // ---------------- 顶栏 ----------------
@@ -148,7 +149,7 @@ fun FileTransferScreen(
                         .dshClickable(onClick = onBack),
                     contentAlignment = Alignment.Center,
                 ) {
-                    DshIcon(DshIconKind.ARROW_LEFT, iconSize = 15.dp, tint = colors.inkMuted)
+                    DshIcon(DshIconKind.BACK, iconSize = 15.dp, tint = colors.inkMuted)
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
@@ -181,7 +182,7 @@ fun FileTransferScreen(
                         .dshClickable(onClick = onOpenSettings),
                     contentAlignment = Alignment.Center,
                 ) {
-                    DshIcon(DshIconKind.GEAR, iconSize = 15.dp, tint = colors.inkMuted)
+                    DshIcon(DshIconKind.SLIDERS, iconSize = 15.dp, tint = colors.inkMuted)
                 }
             }
 
@@ -201,7 +202,7 @@ fun FileTransferScreen(
                     )
                 }
 
-                Spacer(Modifier.height(dimens.gapM))
+                Spacer(Modifier.height(if (Dsh.surface.hasPanels) dimens.gapM else 22.dp))
 
                 StaggeredEnter(index = 1) {
                     ShareGrid(actions = actions)
@@ -371,7 +372,7 @@ private fun ShareGrid(actions: List<ShareAction>) {
                 if (surface.hasPanels) {
                     Modifier
                         .clip(shape)
-                        .background(color = colors.panelTop.copy(alpha = 0.5f))
+                        .background(color = dshFieldFill(0.5f))
                         .border(1.dp, colors.hairline, shape)
                 } else {
                     Modifier
@@ -862,7 +863,7 @@ private fun HintRow(text: String) {
                 if (surface.hasPanels) {
                     Modifier
                         .clip(shape)
-                        .background(color = colors.panelTop.copy(alpha = 0.35f))
+                        .background(color = dshFieldFill(0.35f))
                         .border(1.dp, colors.hairline, shape)
                         .padding(14.dp)
                 } else {

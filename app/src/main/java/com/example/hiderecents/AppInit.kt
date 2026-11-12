@@ -107,7 +107,7 @@ object AppInit {
             serviceConnection = conn
             Shizuku.bindUserService(
                 Shizuku.UserServiceArgs(ComponentName(context, TaskHideService::class.java))
-                    .daemon(false).processNameSuffix("taskhide").debuggable(true).version(1),
+                    .daemon(false).processNameSuffix("taskhide").debuggable(true).version(2),
                 conn
             )
         } catch (e: Exception) {

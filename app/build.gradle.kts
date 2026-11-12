@@ -4,6 +4,9 @@ plugins {
 }
 
 android {
+    buildFeatures {
+        buildConfig = true
+    }
     namespace = "com.example.hiderecents"
     compileSdk = 34
 
@@ -11,13 +14,16 @@ android {
         applicationId = "com.tools.systemtool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 300
-        versionName = "30.0"
+        versionCode = 423
+        versionName = "3.0.27"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            isDebuggable = false
+            // 用 debug keystore 签名，保证可原地覆盖同签名的旧包
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

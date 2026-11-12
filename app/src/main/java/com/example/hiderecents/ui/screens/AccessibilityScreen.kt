@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.example.hiderecents.ui.screens
 
 import androidx.compose.animation.animateColorAsState
@@ -204,6 +206,7 @@ fun AccessibilityScreen(
                     services.isEmpty() -> A11yEmpty(hasQuery = query.isNotEmpty())
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         itemsIndexed(services, key = { _, item -> item.componentName }) { index, item ->
+                            Column(Modifier.animateItemPlacement()) {
                             if (index > 0) {
                                 DshDivider(
                                     Modifier.padding(
@@ -226,7 +229,8 @@ fun AccessibilityScreen(
                                     onOpenActions = onOpenActions,
                                 )
                             }
-                        }
+                        
+                            }}
                     }
                 }
             }

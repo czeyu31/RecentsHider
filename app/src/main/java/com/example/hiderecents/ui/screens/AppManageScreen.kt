@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.example.hiderecents.ui.screens
 
 import androidx.compose.animation.animateColorAsState
@@ -114,6 +116,8 @@ fun AppManageScreen(
     onOpenActions: (ManagedApp) -> Unit,
     onRestoreAll: () -> Unit,
     modifier: Modifier = Modifier,
+    shizukuReady: Boolean = true,
+    onOpenShizuku: () -> Unit = {},
 ) {
     val colors = Dsh.colors
     val dimens = Dsh.dimens
@@ -200,6 +204,7 @@ fun AppManageScreen(
                     apps.isEmpty() -> EmptyState(hasQuery = query.isNotEmpty())
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         itemsIndexed(apps, key = { _, app -> app.packageName }) { index, app ->
+                            Column(Modifier.animateItemPlacement()) {
                             if (index > 0) {
                                 DshDivider(
                                     Modifier.padding(
@@ -222,7 +227,8 @@ fun AppManageScreen(
                                     onOpenActions = onOpenActions,
                                 )
                             }
-                        }
+                        
+                            }}
                     }
                 }
             }
@@ -798,20 +804,15 @@ fun AppDetailDialog(
                 if (detail.permissions.isEmpty()) {
                     Text("未申请权限", style = type.caption, color = colors.inkFaint)
                 } else {
-                    detail.permissions.take(12).forEach { permission ->
+                    // 权限清单完整显示：不再截断到 12 项（旧实现是 take(12) + 「还有 N 项」）。
+                    // 超出可视区的部分由外层 verticalScroll 上下滑动查看；Compose 的 verticalScroll
+                    // 默认不绘制滚动条，符合「不要侧边拉杆」的要求。
+                    detail.permissions.forEach { permission ->
                         Text(
                             text = permission,
                             style = type.monoSmall,
                             color = colors.inkMuted,
                             modifier = Modifier.padding(bottom = 6.dp),
-                        )
-                    }
-                    val rest = detail.permissions.size - 12
-                    if (rest > 0) {
-                        Text(
-                            text = "还有 " + rest + " 项",
-                            style = type.monoSmall,
-                            color = colors.inkFaint,
                         )
                     }
                 }

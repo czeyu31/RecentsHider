@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.hiderecents.ui.components.paperHeaderRule
 import com.example.hiderecents.ui.components.AppIconTile
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshIcon
@@ -111,14 +112,14 @@ fun ApkDetailScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .systemBarsPadding()
+                .safeDrawingPadding()
                 .padding(horizontal = dimens.screenPadding),
         ) {
             Spacer(Modifier.height(4.dp))
 
             // ---------------- 顶栏 ----------------
             Row(
-                Modifier.fillMaxWidth().height(56.dp),
+                Modifier.fillMaxWidth().height(56.dp).paperHeaderRule(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
@@ -128,7 +129,7 @@ fun ApkDetailScreen(
                         .dshClickable(onClick = onBack),
                     contentAlignment = Alignment.Center,
                 ) {
-                    DshIcon(DshIconKind.ARROW_LEFT, iconSize = 15.dp, tint = colors.inkMuted)
+                    DshIcon(DshIconKind.BACK, iconSize = 15.dp, tint = colors.inkMuted)
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
@@ -143,7 +144,7 @@ fun ApkDetailScreen(
                 Text(stage.label, style = type.monoSmall, color = stageColor)
             }
 
-            Spacer(Modifier.height(dimens.gapM))
+            Spacer(Modifier.height(if (Dsh.surface.hasPanels) dimens.gapM else 22.dp))
 
             Column(
                 Modifier

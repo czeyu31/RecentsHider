@@ -19,6 +19,7 @@ import com.example.hiderecents.ui.screens.AdbLineKind
 import com.example.hiderecents.ui.screens.AdbOutputLine
 import com.example.hiderecents.ui.screens.AdbScreen
 import com.example.hiderecents.ui.theme.AppTheme
+import com.example.hiderecents.ui.theme.applyDshSystemBars
 import com.example.hiderecents.ui.theme.DshTheme
 import rikka.shizuku.Shizuku
 import java.text.SimpleDateFormat
@@ -42,7 +43,7 @@ class AdbActivity : AppCompatActivity() {
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
     private var taskHideService: IBinder? = null
-    private var serviceReady = false
+    private var serviceReady by mutableStateOf(false)
 
     private var deviceModel by mutableStateOf("")
     private var deviceInfo by mutableStateOf("")
@@ -126,22 +127,8 @@ class AdbActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ 主题
 
-    @Suppress("DEPRECATION")
     private fun applySystemBars(theme: AppTheme) {
-        val systemDark = (resources.configuration.uiMode and
-            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
-        val paper = when (theme) {
-            AppTheme.SYSTEM -> !systemDark
-            AppTheme.PAPER -> true
-            AppTheme.GRAPHITE -> false
-        }
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.isAppearanceLightStatusBars = paper
-        controller.isAppearanceLightNavigationBars = paper
-        val color = if (paper) 0xFFF1EDE3.toInt() else 0xFF0F1214.toInt()
-        window.statusBarColor = color
-        window.navigationBarColor = color
+        applyDshSystemBars(theme)
     }
 
     // ------------------------------------------------------------------ Shizuku
@@ -159,7 +146,7 @@ class AdbActivity : AppCompatActivity() {
         try {
             Shizuku.bindUserService(
                 Shizuku.UserServiceArgs(ComponentName(this, TaskHideService::class.java))
-                    .daemon(false).processNameSuffix("taskhide").debuggable(true).version(1),
+                    .daemon(false).processNameSuffix("taskhide").debuggable(true).version(2),
                 serviceConnection,
             )
         } catch (_: Exception) {

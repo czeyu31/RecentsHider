@@ -29,6 +29,7 @@ import com.example.hiderecents.ui.screens.A11yFilter
 import com.example.hiderecents.ui.screens.A11yServiceItem
 import com.example.hiderecents.ui.screens.AccessibilityScreen
 import com.example.hiderecents.ui.theme.AppTheme
+import com.example.hiderecents.ui.theme.applyDshSystemBars
 import com.example.hiderecents.ui.theme.DshTheme
 import rikka.shizuku.Shizuku
 import kotlin.math.abs
@@ -192,22 +193,8 @@ class AccessibilityManageActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ 主题
 
-    @Suppress("DEPRECATION")
     private fun applySystemBars(theme: AppTheme) {
-        val systemDark = (resources.configuration.uiMode and
-            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
-        val paper = when (theme) {
-            AppTheme.SYSTEM -> !systemDark
-            AppTheme.PAPER -> true
-            AppTheme.GRAPHITE -> false
-        }
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.isAppearanceLightStatusBars = paper
-        controller.isAppearanceLightNavigationBars = paper
-        val color = if (paper) 0xFFF1EDE3.toInt() else 0xFF0F1214.toInt()
-        window.statusBarColor = color
-        window.navigationBarColor = color
+        applyDshSystemBars(theme)
     }
 
     // ------------------------------------------------------------------ Shizuku
@@ -226,7 +213,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
         try {
             Shizuku.bindUserService(
                 Shizuku.UserServiceArgs(ComponentName(this, TaskHideService::class.java))
-                    .daemon(false).processNameSuffix("taskhide").debuggable(true).version(1),
+                    .daemon(false).processNameSuffix("taskhide").debuggable(true).version(2),
                 serviceConnection,
             )
         } catch (_: Exception) {
@@ -246,7 +233,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
             ) ?: ""
             val myCn = "$packageName/${AccessibilityKeepAliveService::class.java.name}"
-            if (enabled.contains(myCn)) {
+            if (parseEnabledComponents(enabled).any { it.matchesKeepAlive() }) {
                 runOnUiThread {
                     keepAliveEnabled = true
                     loadAccessibilityServices()
@@ -272,16 +259,33 @@ class AccessibilityManageActivity : AppCompatActivity() {
         }.start()
     }
 
+    /**
+     * 判断我们的守护服务是否在系统无障碍列表里。
+     *
+     * 不能只用字符串 contains：系统可能把组件名规范化成短形式
+     * （`pkg/.ClassName`）或全形式（`pkg/full.ClassName`），两种都要能认出来。
+     */
     private fun isKeepAliveServiceEnabled(): Boolean {
         val enabledServices = Settings.Secure.getString(
             contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
         ) ?: ""
-        val myComponent = ComponentName(this, AccessibilityKeepAliveService::class.java).flattenToString()
-        val shortCn = "$packageName/${AccessibilityKeepAliveService::class.java.name}"
-        return enabledServices.contains(myComponent) ||
-            enabledServices.contains(shortCn) ||
-            enabledServices.contains(AccessibilityKeepAliveService::class.java.name)
+        return parseEnabledComponents(enabledServices).any { it.matchesKeepAlive() }
+    }
+
+    private fun parseEnabledComponents(value: String): List<ComponentName> =
+        value.split(':')
+            .filter { it.isNotBlank() }
+            .mapNotNull { ComponentName.unflattenFromString(it.trim()) }
+
+    private fun ComponentName.matchesKeepAlive(): Boolean =
+        packageName == this@AccessibilityManageActivity.packageName &&
+            className == AccessibilityKeepAliveService::class.java.name
+
+    private fun isKeepAliveComponent(cn: String): Boolean {
+        val parsed = ComponentName.unflattenFromString(cn.trim()) ?: return false
+        return parsed.packageName == packageName &&
+            parsed.className == AccessibilityKeepAliveService::class.java.name
     }
 
     private fun refreshKeepAliveState() {
@@ -336,12 +340,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
                     }
                 }
 
-                val sorted = items.sortedWith(
-                    compareByDescending<A11yServiceItem> { it.isPinned }
-                        .thenByDescending { it.isProtected }
-                        .thenByDescending { it.isEnabled }
-                        .thenBy { it.appName.lowercase() },
-                )
+                val sorted = if (consumeStableSortFlag()) sortItemsStable(items) else sortItemsInitial(items)
 
                 runOnUiThread {
                     allItems = sorted
@@ -362,7 +361,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
                 ?: pm.getApplicationIcon(pm.getApplicationInfo(pkg, 0)).also {
                     AppIconLoader.put(pkg, it)
                 }
-            val bitmap = drawable.toBitmap(96, 96).asImageBitmap()
+            val bitmap = AppIconLoader.toSafeBitmap(drawable, 96).asImageBitmap()
             iconCache[pkg] = bitmap
             bitmap
         } catch (_: Exception) {
@@ -370,6 +369,39 @@ class AccessibilityManageActivity : AppCompatActivity() {
         }
     }
 
+    @Volatile
+    private var nextSortStable = false
+
+    /** 进入页面时的排序：已开启 / 已保护的服务排到最上面。 */
+    private fun sortItemsInitial(list: List<A11yServiceItem>): List<A11yServiceItem> =
+        list.sortedWith(
+            compareByDescending<A11yServiceItem> { it.isPinned }
+                .thenByDescending { it.isProtected }
+                .thenByDescending { it.isEnabled }
+                .thenBy { it.appName.lowercase() },
+        )
+
+    /**
+     * 开关变化时的稳定排序：只看置顶 + 名称，位置原地不动。
+     * 旧实现把 isProtected / isEnabled 放进比较器，一按开关整列表就跳到顶部。
+     */
+    private fun sortItemsStable(list: List<A11yServiceItem>): List<A11yServiceItem> =
+        list.sortedWith(
+            compareByDescending<A11yServiceItem> { it.isPinned }
+                .thenBy { it.appName.lowercase() },
+        )
+
+    private fun consumeStableSortFlag(): Boolean {
+        val v = nextSortStable
+        nextSortStable = false
+        return v
+    }
+
+    /** 开关后重新读取系统状态，但保持原地顺序（不把该项顶到最前）。 */
+    private fun reloadItemsInPlace() {
+        nextSortStable = true
+        loadAccessibilityServices()
+    }
     private fun filterItems(
         source: List<A11yServiceItem>,
         q: String,
@@ -447,7 +479,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
                 } else {
                     Toast.makeText(this, "操作失败", Toast.LENGTH_SHORT).show()
                 }
-                loadAccessibilityServices()
+                reloadItemsInPlace()
             }
         }.start()
     }
@@ -517,7 +549,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
         allItems = allItems.map {
             if (it.componentName == item.componentName) it.copy(isProtected = protect) else it
         }
-        loadAccessibilityServices()
+        reloadItemsInPlace()
     }
 
     private fun togglePin(item: A11yServiceItem) {

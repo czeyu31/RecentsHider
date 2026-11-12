@@ -1,12 +1,15 @@
 package com.example.hiderecents
 
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -31,6 +34,7 @@ import com.example.hiderecents.ui.screens.HomeUiState
 import com.example.hiderecents.ui.screens.KeepAliveGuideDialog
 import com.example.hiderecents.ui.screens.SettingsDialog
 import com.example.hiderecents.ui.theme.AppTheme
+import com.example.hiderecents.ui.theme.applyDshSystemBars
 import com.example.hiderecents.ui.theme.DshTheme
 import rikka.shizuku.Shizuku
 import kotlin.math.abs
@@ -61,6 +65,12 @@ class MainActivity : AppCompatActivity() {
     private var homeState by mutableStateOf(HomeUiState())
     private var appTheme by mutableStateOf(AppTheme.SYSTEM)
     private var showSettings by mutableStateOf(false)
+    private var hideGuard by mutableStateOf(true)
+    private var relaunchOnUnhide by mutableStateOf(true)
+    private var keepAliveBatteryOk by mutableStateOf(false)
+    private var keepAliveAutoStartOk by mutableStateOf(false)
+    private var keepAliveAutoStartUnknown by mutableStateOf(false)
+    private var keepAliveManualAutoStart by mutableStateOf(false)
     private var showKeepAliveGuide by mutableStateOf(false)
 
     private val serviceConnection = object : ServiceConnection {
@@ -107,6 +117,8 @@ class MainActivity : AppCompatActivity() {
 
         prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         appTheme = AppTheme.fromPref(prefs.getString("ui_theme", null))
+        hideGuard = prefs.getBoolean("hide_guard_enabled", true)
+        relaunchOnUnhide = prefs.getBoolean("relaunch_on_unhide", true)
         applySystemBars()
 
         setContent {
@@ -115,8 +127,9 @@ class MainActivity : AppCompatActivity() {
                     state = homeState,
                     onOpenToolbox = {
                         startActivity(Intent(this@MainActivity, ToolboxActivity::class.java))
-                        @Suppress("DEPRECATION")
-                        overridePendingTransition(R.anim.scale_in, 0)
+                        // 不覆盖转场：与其它页面完全一致，走系统默认的右→左滑入。
+                        // R.anim.slide_left 里带 alpha 0.5→1.0 淡入，过渡期间整个工具箱窗口是半透明的，
+                        // 下面的首页内容会透上来 —— 这就是「只有工具箱有黑幕/透出」的来源。
                     },
                     onOpenAccessibility = { openAccessibility() },
                     onOpenSettings = { showSettings = true },
@@ -136,25 +149,38 @@ class MainActivity : AppCompatActivity() {
                         statusNotification = homeState.statusNotification,
                         excludeFromRecents = homeState.excludeFromRecents,
                         hiddenCount = homeState.hiddenCount,
+                        hideGuard = hideGuard,
+                            relaunchOnUnhide = relaunchOnUnhide,
                         onThemeChange = { setTheme(it) },
                         onToggleKeepAlive = { toggleKeepAlive(it) },
                         onToggleNotification = { toggleNotification(it) },
                         onToggleExclude = { toggleExcludeFromRecents(it) },
+                        onHideGuardChange = { applyHideGuard(it) },
+                            onRelaunchOnUnhideChange = { applyRelaunchOnUnhide(it) },
                         onDismiss = { showSettings = false },
                     )
                 }
 
                 if (showKeepAliveGuide) {
                     KeepAliveGuideDialog(
-                        onOpenBatterySettings = {
-                            showKeepAliveGuide = false
-                            openBatteryOptimizationSettings()
+                        batteryOk = keepAliveBatteryOk,
+                        autoStartOk = keepAliveAutoStartOk,
+                        autoStartUnknown = keepAliveAutoStartUnknown,
+                        manualAutoStart = keepAliveManualAutoStart,
+                        // 点「电池优化 / 自启动」不再关闭卡片：跳系统页，回来自动重新检测
+                        onOpenBatterySettings = { KeepAliveGuard.openBatterySettings(this@MainActivity) },
+                        onOpenAutoStartSettings = { KeepAliveGuard.openAutoStartSettings(this@MainActivity) },
+                        onManualAutoStartChange = {
+                            KeepAliveGuard.setManualAutoStart(this@MainActivity, it)
+                            refreshKeepAliveGuideState()
                         },
-                        onOpenAutoStartSettings = {
+                        onRecheck = { refreshKeepAliveGuideState() },
+                        onFinish = { finishKeepAliveGuide() },
+                        onDismiss = {
+                            // 只点「稍后再说」时不打开保活：条件没满足就不写 keep_alive_enabled
                             showKeepAliveGuide = false
-                            openAutoStartSettings()
+                            refreshState()
                         },
-                        onDismiss = { showKeepAliveGuide = false },
                     )
                 }
             }
@@ -166,10 +192,28 @@ class MainActivity : AppCompatActivity() {
         ensureAccessibilityKeepAlive()
         applyExcludeFromRecents(prefs.getBoolean("hide_from_recents", false))
         updateStatusNotification()
+        syncKeepAliveService()
+        HiddenGuardService.sync(this)
+
+        // 注册即拿到当前温度（sticky 广播的返回值就是最近一次的值）
+        val stickyBattery = registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        stickyBattery?.let { applyBatteryTemperature(it) }
     }
 
     // ------------------------------------------------------------------ 主题
 
+    private fun applyRelaunchOnUnhide(value: Boolean) {
+        prefs.edit().putBoolean("relaunch_on_unhide", value).apply()
+        relaunchOnUnhide = value
+        Toast.makeText(this, if (value) "取消隐藏会回到前台" else "取消隐藏不再拉起应用", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun applyHideGuard(value: Boolean) {
+        prefs.edit().putBoolean("hide_guard_enabled", value).apply()
+        hideGuard = value
+        HiddenGuardService.sync(this)
+        Toast.makeText(this, if (value) "已开启持续守护" else "仅一次生效", Toast.LENGTH_SHORT).show()
+    }
     private fun setTheme(theme: AppTheme) {
         prefs.edit().putString("ui_theme", theme.prefValue).apply()
         appTheme = theme
@@ -186,15 +230,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    @Suppress("DEPRECATION")
     private fun applySystemBars() {
-        val paper = resolveTheme() == AppTheme.PAPER
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.isAppearanceLightStatusBars = paper
-        controller.isAppearanceLightNavigationBars = paper
-        val color = if (paper) 0xFFF1EDE3.toInt() else 0xFF0F1214.toInt()
-        window.statusBarColor = color
-        window.navigationBarColor = color
+        applyDshSystemBars(appTheme)
     }
 
     // ------------------------------------------------------------------ 状态
@@ -222,7 +259,7 @@ class MainActivity : AppCompatActivity() {
         when {
             !running -> {
                 statusText = "未运行"
-                statusDetail = "没有检测到 Shizuku 服务，请先在 Shizuku 应用中启动服务"
+                statusDetail = "未检测到 Shizuku，请先在 Shizuku 中启动服务"
             }
 
             !shizukuPermissionGranted -> {
@@ -242,6 +279,42 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // 运行时长：优先 /proc/uptime（与原监控页同口径），
+        // 但 Android 15 上该文件对应用进程被 SELinux 拦截，读不到时回落 elapsedRealtime()。
+        // elapsedRealtime() 本身包含深睡时间，口径一致，且无需任何权限。
+        var uptimeSeconds = 0L
+        try {
+            val text = java.io.File("/proc/uptime").readText().trim()
+            uptimeSeconds = text.split(" ")[0].toDoubleOrNull()?.toLong() ?: 0L
+        } catch (_: Throwable) {
+            uptimeSeconds = 0L
+        }
+        if (uptimeSeconds <= 0L) {
+            uptimeSeconds = android.os.SystemClock.elapsedRealtime() / 1000L
+        }
+
+        var uptimeValue = "未知"
+        var uptimeUnit = ""
+        if (uptimeSeconds > 0L) {
+            val days = uptimeSeconds / 86400
+            val hours = (uptimeSeconds % 86400) / 3600
+            val minutes = (uptimeSeconds % 3600) / 60
+            when {
+                days > 0 -> {
+                    uptimeValue = days.toString()
+                    uptimeUnit = "天 " + hours + " 时"
+                }
+                hours > 0 -> {
+                    uptimeValue = hours.toString()
+                    uptimeUnit = "时 " + minutes + " 分"
+                }
+                else -> {
+                    uptimeValue = minutes.toString()
+                    uptimeUnit = "分"
+                }
+            }
+        }
+
         homeState = homeState.copy(
             statusText = statusText,
             statusDetail = statusDetail,
@@ -251,7 +324,10 @@ class MainActivity : AppCompatActivity() {
             keepAlive = prefs.getBoolean("keep_alive_enabled", false),
             statusNotification = prefs.getBoolean("show_status_notification", false),
             excludeFromRecents = prefs.getBoolean("hide_from_recents", false),
+            uptimeValue = uptimeValue,
+            uptimeUnit = uptimeUnit,
         )
+
 
         loadHiddenPreview(hidden)
     }
@@ -323,7 +399,7 @@ class MainActivity : AppCompatActivity() {
         try {
             Shizuku.bindUserService(
                 Shizuku.UserServiceArgs(ComponentName(this, TaskHideService::class.java))
-                    .daemon(false).processNameSuffix("taskhide").debuggable(true).version(1),
+                    .daemon(false).processNameSuffix("taskhide").debuggable(true).version(2),
                 serviceConnection,
             )
         } catch (e: Exception) {
@@ -412,7 +488,15 @@ class MainActivity : AppCompatActivity() {
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
             ) ?: ""
             val myCn = "$packageName/${AccessibilityKeepAliveService::class.java.name}"
-            if (!enabled.contains(myCn)) {
+            // 组件名可能是短形式或全形式，统一解析后比较，不要用字符串 contains
+            val listed = enabled.split(':')
+                .filter { it.isNotBlank() }
+                .mapNotNull { ComponentName.unflattenFromString(it.trim()) }
+                .any {
+                    it.packageName == packageName &&
+                        it.className == AccessibilityKeepAliveService::class.java.name
+                }
+            if (!listed) {
                 val newValue = if (enabled.isEmpty()) myCn else "$enabled:$myCn"
                 executeCommandSync("settings put secure enabled_accessibility_services $newValue")
                 executeCommandSync("settings put secure accessibility_enabled 1")
@@ -451,15 +535,56 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, if (value) "已从最近任务中移除" else "已恢复最近任务卡片", Toast.LENGTH_SHORT).show()
     }
 
+    private fun refreshKeepAliveGuideState() {
+        keepAliveBatteryOk = KeepAliveGuard.batteryOk(this)
+        keepAliveAutoStartOk = KeepAliveGuard.autoStartOk(this)
+        keepAliveAutoStartUnknown = KeepAliveGuard.autoStartUnknown(this)
+        keepAliveManualAutoStart = KeepAliveGuard.manualAutoStart(this)
+    }
+
+    private fun enableKeepAlive() {
+        prefs.edit().putBoolean("keep_alive_enabled", true).apply()
+        KeepAliveService.start(this)
+        showKeepAliveGuide = false
+        refreshState()
+        Toast.makeText(this, "已开启后台保活", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun finishKeepAliveGuide() {
+        refreshKeepAliveGuideState()
+        if (!KeepAliveGuard.allSatisfied(this)) {
+            Toast.makeText(this, "还有设置没完成，保活暂未开启", Toast.LENGTH_SHORT).show()
+            return
+        }
+        enableKeepAlive()
+    }
+
     private fun toggleKeepAlive(value: Boolean) {
         if (value) {
-            prefs.edit().putBoolean("keep_alive_enabled", true).apply()
-            refreshState()
-            showKeepAliveGuide = true
+            // 只有「电池优化 + 自启动」都满足才真正打开开关；
+            // 否则先弹引导，开关保持关闭（用户只点「稍后再说」时也不会被打开）。
+            refreshKeepAliveGuideState()
+            if (KeepAliveGuard.allSatisfied(this)) {
+                enableKeepAlive()
+            } else {
+                showKeepAliveGuide = true
+                refreshState()
+                Toast.makeText(this, "请先完成电池优化与自启动设置", Toast.LENGTH_SHORT).show()
+            }
         } else {
             prefs.edit().putBoolean("keep_alive_enabled", false).apply()
+            KeepAliveService.stop(this)
             refreshState()
             Toast.makeText(this, "已关闭后台保活", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** 保活开关对应的常驻服务：开启则拉起，关闭则停掉 */
+    private fun syncKeepAliveService() {
+        if (prefs.getBoolean("keep_alive_enabled", false)) {
+            KeepAliveService.start(this)
+        } else {
+            KeepAliveService.stop(this)
         }
     }
 
@@ -703,17 +828,74 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ------------------------------------------------------------------ 电池温度
+
+    /**
+     * 电池温度接收器。
+     *
+     * 系统每 10 秒左右主动广播一次 ACTION_BATTERY_CHANGED，比自己轮询省电，
+     * 而且不需要任何权限。这是应用进程在 Android 15 上唯一稳定可读的温度源。
+     */
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_BATTERY_CHANGED) {
+                applyBatteryTemperature(intent)
+            }
+        }
+    }
+
+    private fun applyBatteryTemperature(intent: Intent) {
+        val tenths = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+        val text = if (tenths == Int.MIN_VALUE || tenths <= 0) {
+            "—"
+        } else {
+            String.format(java.util.Locale.US, "%.1f", tenths / 10f)
+        }
+        if (text != homeState.batteryTemp) {
+            homeState = homeState.copy(batteryTemp = text)
+        }
+        // 温度变了就同步岛上的状态（内部按「数量|温度」去重，不会刷屏）
+        Unit
+    }
+
     // ------------------------------------------------------------------ 生命周期
+
+    /** 运行时长每分钟刷新一次，不用整页轮询 */
+    private val uptimeTicker = object : Runnable {
+        override fun run() {
+            refreshState()
+            handler.postDelayed(this, 60_000L)
+        }
+    }
 
     override fun onResume() {
         super.onResume()
+        // 从系统设置页返回时重新检测保活条件（引导卡片不关闭）
+        if (showKeepAliveGuide) refreshKeepAliveGuideState()
+        // 从应用管理 / 工具箱返回时重读偏好：首页「已隐藏 N 个应用」等数字要跟着变，
+        // 否则进程没重启时会一直显示 onCreate 时读到的旧值。
+        hideGuard = prefs.getBoolean("hide_guard_enabled", true)
+        relaunchOnUnhide = prefs.getBoolean("relaunch_on_unhide", true)
+        refreshState()
+        HiddenGuardService.sync(this)
         applySystemBars()
         refreshState()
         updateStatusNotification()
+        handler.removeCallbacks(uptimeTicker)
+        handler.postDelayed(uptimeTicker, 60_000L)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(uptimeTicker)
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(batteryReceiver)
+        } catch (_: Exception) {
+        }
         handler.removeCallbacksAndMessages(null)
         Shizuku.removeRequestPermissionResultListener(shizukuPermissionResultListener)
         Shizuku.removeBinderReceivedListener(binderReceivedListener)

@@ -135,10 +135,14 @@ class FilePickerActivity : AppCompatActivity() {
                     try {
                         val pm = packageManager
                         val pi = pm.getPackageArchiveInfo(item.file.absolutePath, android.content.pm.PackageManager.GET_META_DATA)
-                        if (pi != null) {
-                            pi.applicationInfo.sourceDir = item.file.absolutePath
-                            pi.applicationInfo.publicSourceDir = item.file.absolutePath
-                            holder.ivIcon.setImageDrawable(pi.applicationInfo.loadIcon(pm))
+                        // compileSdk 提到 36 之后 PackageInfo.applicationInfo 变成可空类型，
+                        // 直接取 .sourceDir 会报 "Only safe (?.) or non-null asserted (!!.) calls"。
+                        // 这里用 ?.let 包住，取不到就落到下面的占位图标分支。
+                        val ai = pi?.applicationInfo
+                        if (ai != null) {
+                            ai.sourceDir = item.file.absolutePath
+                            ai.publicSourceDir = item.file.absolutePath
+                            holder.ivIcon.setImageDrawable(ai.loadIcon(pm))
                         } else {
                             holder.ivIcon.setImageResource(R.drawable.ic_apk_install)
                         }

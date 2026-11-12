@@ -25,6 +25,7 @@ import com.example.hiderecents.ui.screens.NotificationEntry
 import com.example.hiderecents.ui.screens.NotificationFilterSheet
 import com.example.hiderecents.ui.screens.NotificationHistoryScreen
 import com.example.hiderecents.ui.theme.AppTheme
+import com.example.hiderecents.ui.theme.applyDshSystemBars
 import com.example.hiderecents.ui.theme.DshTheme
 import org.json.JSONArray
 import rikka.shizuku.Shizuku
@@ -141,22 +142,8 @@ class NotificationHistoryActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ 主题
 
-    @Suppress("DEPRECATION")
     private fun applySystemBars(theme: AppTheme) {
-        val systemDark = (resources.configuration.uiMode and
-            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
-        val paper = when (theme) {
-            AppTheme.SYSTEM -> !systemDark
-            AppTheme.PAPER -> true
-            AppTheme.GRAPHITE -> false
-        }
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.isAppearanceLightStatusBars = paper
-        controller.isAppearanceLightNavigationBars = paper
-        val color = if (paper) 0xFFF1EDE3.toInt() else 0xFF0F1214.toInt()
-        window.statusBarColor = color
-        window.navigationBarColor = color
+        applyDshSystemBars(theme)
     }
 
     // ------------------------------------------------------------------ Shizuku
@@ -167,7 +154,7 @@ class NotificationHistoryActivity : AppCompatActivity() {
             if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return
             Shizuku.bindUserService(
                 Shizuku.UserServiceArgs(ComponentName(this, TaskHideService::class.java))
-                    .daemon(false).processNameSuffix("taskhide").debuggable(true).version(1),
+                    .daemon(false).processNameSuffix("taskhide").debuggable(true).version(2),
                 serviceConnection,
             )
         } catch (_: Exception) {
@@ -298,7 +285,7 @@ class NotificationHistoryActivity : AppCompatActivity() {
                 ?: pm.getApplicationIcon(pm.getApplicationInfo(pkg, 0)).also {
                     AppIconLoader.put(pkg, it)
                 }
-            drawable.toBitmap(96, 96).asImageBitmap()
+            AppIconLoader.toSafeBitmap(drawable, 96).asImageBitmap()
         } catch (_: Exception) {
             null
         }

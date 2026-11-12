@@ -7,7 +7,9 @@ import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -26,6 +28,7 @@ import com.example.hiderecents.ui.screens.ApkInstallerScreen
 import com.example.hiderecents.ui.screens.ApkQueueItem
 import com.example.hiderecents.ui.screens.ApkStatus
 import com.example.hiderecents.ui.theme.AppTheme
+import com.example.hiderecents.ui.theme.applyDshSystemBars
 import com.example.hiderecents.ui.theme.DshTheme
 import rikka.shizuku.Shizuku
 import java.io.File
@@ -44,13 +47,14 @@ class ApkInstallerActivity : AppCompatActivity() {
 
     private companion object {
         const val REQ_PICK_APK = 2001
+        const val REQ_STORAGE = 2003
     }
 
     private lateinit var prefs: SharedPreferences
     private val handler = Handler(Looper.getMainLooper())
 
     private var taskHideService: IBinder? = null
-    private var shizukuBound = false
+    private var shizukuBound by mutableStateOf(false)
 
     private var queue by mutableStateOf(listOf<ApkQueueItem>())
     private var installing by mutableStateOf(false)
@@ -109,6 +113,72 @@ class ApkInstallerActivity : AppCompatActivity() {
         }
 
         bindShizuku()
+        ensureStoragePermission()
+    }
+
+    // ------------------------------------------------------------------ 存储权限
+
+    /**
+     * 首次打开时申请文件访问权限。
+     *
+     * 为什么需要：选择 APK 后要把文件复制到可读目录、并解析包信息，
+     * 没有存储权限时在部分机型（MIUI）上 getRealPathFromUri / 读取会失败。
+     * Android 11+ 走「所有文件访问权限」，10 及以下走 READ/WRITE_EXTERNAL_STORAGE。
+     * 只提示一次，避免每次进页面都弹。
+     */
+    private fun ensureStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Environment.isExternalStorageManager()) return
+            if (prefs.getBoolean("asked_all_files_access", false)) return
+            prefs.edit().putBoolean("asked_all_files_access", true).apply()
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("需要文件访问权限")
+                .setMessage("安装本地 APK 需要读取存储中的文件。请在下一步选择「允许管理所有文件」。")
+                .setPositiveButton("去授权") { _, _ ->
+                    try {
+                        val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                        intent.data = Uri.parse("package:$packageName")
+                        startActivity(intent)
+                    } catch (_: Exception) {
+                        try {
+                            startActivity(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+                .setNegativeButton("以后再说", null)
+                .show()
+        } else {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.READ_EXTERNAL_STORAGE,
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) return
+            if (prefs.getBoolean("asked_storage_permission", false)) return
+            prefs.edit().putBoolean("asked_storage_permission", true).apply()
+            androidx.core.app.ActivityCompat.requestPermissions(
+                this,
+                arrayOf(
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                ),
+                REQ_STORAGE,
+            )
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_STORAGE) {
+            val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            if (!ok) {
+                Toast.makeText(this, "未授予存储权限，选择 APK 可能失败", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -126,22 +196,8 @@ class ApkInstallerActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ 主题
 
-    @Suppress("DEPRECATION")
     private fun applySystemBars(theme: AppTheme) {
-        val systemDark = (resources.configuration.uiMode and
-            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
-        val paper = when (theme) {
-            AppTheme.SYSTEM -> !systemDark
-            AppTheme.PAPER -> true
-            AppTheme.GRAPHITE -> false
-        }
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.isAppearanceLightStatusBars = paper
-        controller.isAppearanceLightNavigationBars = paper
-        val color = if (paper) 0xFFF1EDE3.toInt() else 0xFF0F1214.toInt()
-        window.statusBarColor = color
-        window.navigationBarColor = color
+        applyDshSystemBars(theme)
     }
 
     // ------------------------------------------------------------------ Shizuku
@@ -150,7 +206,7 @@ class ApkInstallerActivity : AppCompatActivity() {
         try {
             Shizuku.bindUserService(
                 Shizuku.UserServiceArgs(ComponentName(this, TaskHideService::class.java))
-                    .daemon(false).processNameSuffix("apkinstaller").debuggable(true).version(1),
+                    .daemon(false).processNameSuffix("apkinstaller").debuggable(true).version(2),
                 shizukuConnection,
             )
         } catch (_: Exception) {
@@ -238,7 +294,7 @@ class ApkInstallerActivity : AppCompatActivity() {
                         pkgName = packageInfo.packageName
                         version = packageInfo.versionName ?: ""
                         icon = try {
-                            info.loadIcon(pm).toBitmap(96, 96).asImageBitmap()
+                            AppIconLoader.toSafeBitmap(info.loadIcon(pm), 96).asImageBitmap()
                         } catch (_: Exception) {
                             null
                         }

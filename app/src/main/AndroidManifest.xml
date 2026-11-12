@@ -4,6 +4,14 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+        Android 16 Live Updates（置顶通知 / 实况更新）。
+
+        为什么这次要加：参考应用 com.spark.noticeflow 是 targetSdk=36 且声明了这条权限，
+        在不需要小米 XMS 白名单的情况下就能出岛；我们 targetSdk=34、没声明，
+        所以一直卡在 FocusPlugin onAuthFailed（capability = -135266497）。
+        本机已确认该权限存在：prot=normal|appop，属于声明即授予的 normal 级。
+    -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -24,6 +32,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
     <application
+        android:name=".DshApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -45,9 +54,16 @@
             android:name=".MainActivity"
             android:launchMode="singleTop" />
 
-        <activity
-            android:name=".ToolboxActivity"
-            android:theme="@style/Theme.ToolboxDialog" />
+        <service
+            android:name=".HiddenGuardService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+
+        <!-- 工具箱现在是整页而不是对话框：不再用 Theme.ToolboxDialog。
+             那个主题带 backgroundDimEnabled + backgroundDimAmount=0.7 与 windowIsTranslucent，
+             滑入时窗口还没覆盖到的区域会露出这层压暗 —— 用户看到的就是「黑幕」。
+             改用 application 的 Theme.HideRecents，与其它页面完全一致。 -->
+        <activity android:name=".ToolboxActivity" />
 
         <activity android:name=".AppManageActivity" />
         <activity android:name=".AdbActivity" />
@@ -119,6 +135,15 @@
             android:exported="false" />
 
         <service
+            android:name=".KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="keep_app_alive_for_recents_hiding" />
+        </service>
+
+        <service
             android:name=".AccessibilityKeepAliveService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
@@ -154,13 +179,36 @@
         <service
             android:name=".QuickSettingsService"
             android:icon="@drawable/ic_qs_visibility"
-            android:label="隐藏最近"
+            android:label="隐藏应用"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+<service
+            android:name=".A11yTileService"
+            android:icon="@drawable/ic_qs_accessibility"
+            android:label="无障碍"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <activity
+            android:name=".TilePrefsRouterActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
 
         <receiver
             android:name=".BootReceiver"
