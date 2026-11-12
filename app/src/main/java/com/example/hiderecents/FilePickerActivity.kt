@@ -1,5 +1,6 @@
 package com.example.hiderecents
 
+import androidx.activity.OnBackPressedCallback
 import android.content.Intent
 import android.os.Bundle
 import android.os.Environment
@@ -29,6 +30,17 @@ class FilePickerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyPredictiveBackPref()
+        // 预测返回手势：返回统一交给 OnBackPressedDispatcher。
+        // 开启 enableOnBackInvokedCallback 后系统不再调用 onBackPressed()，必须走回调。
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    handleBackPressed()
+                }
+            },
+        )
         setContentView(R.layout.activity_file_picker)
 
         tvPath = findViewById(R.id.tvPath)
@@ -187,12 +199,12 @@ class FilePickerActivity : AppCompatActivity() {
         override fun getItemCount() = items.size
     }
 
-    override fun onBackPressed() {
+    private fun handleBackPressed() {
         if (currentDir != Environment.getExternalStorageDirectory()) {
             currentDir = currentDir.parentFile ?: Environment.getExternalStorageDirectory()
             loadFiles()
         } else {
-            super.onBackPressed()
+            dshGoBack()
         }
     }
 }

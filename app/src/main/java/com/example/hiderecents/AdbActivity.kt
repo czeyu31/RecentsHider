@@ -33,7 +33,7 @@ import java.util.Locale
  * 命令输入与执行、控制台输出（带时间戳与分隔线）、清空。
  * 所有命令通过 Shizuku 的 execCommand Parcel 通道以 shell 身份执行。
  */
-class AdbActivity : AppCompatActivity() {
+class AdbActivity : DshActivity() {
 
     companion object {
         private const val MAX_LINES = 400
@@ -78,6 +78,7 @@ class AdbActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyPredictiveBackPref()
 
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         val theme = AppTheme.fromPref(prefs.getString("ui_theme", null))
@@ -93,7 +94,7 @@ class AdbActivity : AppCompatActivity() {
                     output = output,
                     running = running,
                     ready = serviceReady,
-                    onBack = { finish() },
+                    onBack = { dshGoBack() },
                     onClear = { clearOutput() },
                     onExecute = { executeCommand() },
                     onQuickCommand = { cmd ->
@@ -206,7 +207,7 @@ class AdbActivity : AppCompatActivity() {
     }
 
     private fun executeCommandSync(command: String): String {
-        val binder = taskHideService ?: return ""
+        val binder = TaskHideBridge.resolve(taskHideService) ?: return ""
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {

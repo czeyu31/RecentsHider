@@ -43,7 +43,7 @@ import java.io.File
  * - 三路安装：pm install -r -g -> cat | pm install -S -> pm install-create/write/commit
  * - 逐项状态与总体进度、失败重试
  */
-class ApkInstallerActivity : AppCompatActivity() {
+class ApkInstallerActivity : DshActivity() {
 
     private companion object {
         const val REQ_PICK_APK = 2001
@@ -91,6 +91,7 @@ class ApkInstallerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyPredictiveBackPref()
 
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         val theme = AppTheme.fromPref(prefs.getString("ui_theme", null))
@@ -105,7 +106,7 @@ class ApkInstallerActivity : AppCompatActivity() {
                     overallPercent = overallPercent,
                     overallInfo = overallInfo,
                     shizukuReady = shizukuBound,
-                    onBack = { finish() },
+                    onBack = { dshGoBack() },
                     onSelectApk = { selectApk() },
                     onRetry = { retryFailed() },
                 )
@@ -424,78 +425,19 @@ class ApkInstallerActivity : AppCompatActivity() {
 
     private fun installApk(apkFile: File): Boolean {
         AppLogger.i("ApkInstaller: file=${apkFile.absolutePath}, exists=${apkFile.exists()}, size=${apkFile.length()}")
-
         var waitCount = 0
-        while (taskHideService == null && waitCount < 20) {
+        while (TaskHideBridge.resolve(taskHideService) == null && waitCount < 20) {
             Thread.sleep(250)
             waitCount++
         }
-
-        val binder = taskHideService
-        if (binder == null) {
-            AppLogger.e("ApkInstaller: taskHideService is null after waiting")
+        if (TaskHideBridge.resolve(taskHideService) == null) {
+            AppLogger.e("ApkInstaller: no shizuku binder after waiting")
             return false
         }
-
-        fun execCmd(cmd: String): Pair<Boolean, String> {
-            val data = Parcel.obtain()
-            val reply = Parcel.obtain()
-            try {
-                data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
-                data.writeString(cmd)
-                binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
-                reply.readException()
-                val success = reply.readInt() != 0
-                val output = reply.readString() ?: ""
-                AppLogger.i("ApkInstaller cmd: $cmd => success=$success, output=${output.take(200)}")
-                return Pair(success, output)
-            } finally {
-                data.recycle()
-                reply.recycle()
-            }
-        }
-
-        // 1) 直接 pm install
-        try {
-            val (success, output) = execCmd("pm install -r -g '${apkFile.absolutePath}'")
-            if (success || output.contains("Success")) return true
-            AppLogger.i("ApkInstaller: direct pm install failed, trying cat pipe")
-        } catch (e: Exception) {
-            AppLogger.e("ApkInstaller: direct install exception", e)
-        }
-
-        // 2) cat 管道
-        try {
-            val (success, output) = execCmd("cat '${apkFile.absolutePath}' | pm install -S ${apkFile.length()}")
-            if (success || output.contains("Success")) return true
-            AppLogger.i("ApkInstaller: cat pipe failed, trying session install")
-        } catch (e: Exception) {
-            AppLogger.e("ApkInstaller: cat pipe exception", e)
-        }
-
-        // 3) session 安装
-        try {
-            val size = apkFile.length()
-            val (createSuccess, createOutput) = execCmd("pm install-create -S $size")
-            AppLogger.i("ApkInstaller session: create success=$createSuccess, output=$createOutput")
-            if (createSuccess || createOutput.contains("Success")) {
-                val match = Regex("\\[(\\d+)\\]").find(createOutput)
-                if (match != null) {
-                    val sessionId = match.groupValues[1]
-                    val (writeSuccess, writeOutput) = execCmd(
-                        "pm install-write $sessionId base '${apkFile.absolutePath}'",
-                    )
-                    AppLogger.i("ApkInstaller session: write success=$writeSuccess, output=$writeOutput")
-                    val (commitSuccess, commitOutput) = execCmd("pm install-commit $sessionId")
-                    AppLogger.i("ApkInstaller session: commit success=$commitSuccess, output=$commitOutput")
-                    if (commitSuccess || commitOutput.contains("Success")) return true
-                }
-            }
-        } catch (e: Exception) {
-            AppLogger.e("ApkInstaller: session install exception", e)
-        }
-
-        return false
+        // 与文件传输共用同一份静默安装逻辑（cp → pm install -r → 会话式安装）。
+        val res = SilentApkInstaller.install(apkFile, taskHideService)
+        AppLogger.i("ApkInstaller: result=" + res.first + " output=" + res.second.take(240))
+        return res.first
     }
 
     private fun formatSize(bytes: Long): String = when {

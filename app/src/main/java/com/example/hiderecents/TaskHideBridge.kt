@@ -13,4 +13,7 @@ import android.os.IBinder
 object TaskHideBridge {
     @Volatile
     var binder: IBinder? = null
+
+    /** 取可用 binder：本页自己的 → 进程内共享的 → AppInit 预绑定的。 */
+    fun resolve(own: IBinder?): IBinder? = own ?: binder ?: AppInit.taskHideService
 }

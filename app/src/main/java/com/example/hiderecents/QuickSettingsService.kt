@@ -126,9 +126,17 @@ class QuickSettingsService : TileService() {
                 if (callSetInvisible(binder, pkg, !turningOff)) ok++
             }
             p.edit().putBoolean(KEY_ENABLED, !turningOff).apply()
+            if (turningOff) {
+                // 本 ROM 的「隐藏」= removeTask，任务（最近任务卡片）已被销毁；
+                // 不重建任务的话，取消隐藏后应用永远不会回到最近任务。
+                // 这里逐个「拉起 + 立即回桌面」：只重建任务，不让它停在前面，
+                // 避免一批应用连续跳前台。
+                for (pkg in hidden) {
+                    execCommand(binder, "monkey -p " + pkg + " -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1; sleep 0.2; input keyevent 3")
+                }
+            }
             // 关掉「隐藏」时把目标重新拉起一次：removeTask 已经销毁了它们的任务，
             // 不重新拉起的话它们在最近任务里永远不会回来（用户看到的就是「关掉了但后台没有」）。
-            // 关闭隐藏时不再把应用拉回前台：一批应用同时被拉起会连续跳前台。
             // 取消隐藏只负责清标记，应用是否回前台由用户在软件内的「恢复时回到前台」决定。
             HiddenGuardService.sync(this)
             toastOnUi(

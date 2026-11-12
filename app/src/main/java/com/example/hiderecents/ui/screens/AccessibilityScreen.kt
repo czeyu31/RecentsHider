@@ -93,6 +93,7 @@ enum class A11yFilter(val label: String) {
 fun AccessibilityScreen(
     services: List<A11yServiceItem>,
     totalCount: Int,
+    userCount: Int,
     enabledCount: Int,
     protectedCount: Int,
     autoProtect: Boolean,
@@ -174,7 +175,7 @@ fun AccessibilityScreen(
                 onFilterChange = onFilterChange,
                 counts = mapOf(
                     A11yFilter.ALL to totalCount,
-                    A11yFilter.USER to services.count { !it.isSystem },
+                    A11yFilter.USER to userCount,
                     A11yFilter.PROTECTED to protectedCount,
                 ),
             )

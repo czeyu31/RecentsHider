@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -124,6 +125,7 @@ fun FileTransferScreen(
     onRemoveSharedFile: (String) -> Unit,
     onSendToDevice: (NearbyDeviceItem) -> Unit,
     onOpenTaskFile: (TransferTaskItem) -> Unit,
+    deviceSendStates: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier,
 ) {
     val colors = Dsh.colors
@@ -182,7 +184,12 @@ fun FileTransferScreen(
                         .dshClickable(onClick = onOpenSettings),
                     contentAlignment = Alignment.Center,
                 ) {
-                    DshIcon(DshIconKind.SLIDERS, iconSize = 15.dp, tint = colors.inkMuted)
+                    // 纸本（无面板）用文字「设置」，与首页/工具箱一致；石墨（有面板）用滑杆图标
+                    if (Dsh.surface.hasPanels) {
+                        DshIcon(DshIconKind.SLIDERS, iconSize = 15.dp, tint = colors.inkMuted)
+                    } else {
+                        Text("设置", style = type.caption, color = colors.inkMuted)
+                    }
                 }
             }
 
@@ -226,6 +233,7 @@ fun FileTransferScreen(
                         scanning = scanning,
                         onScan = onScan,
                         onSendToDevice = onSendToDevice,
+                        deviceSendStates = deviceSendStates,
                     )
                 }
 
@@ -494,6 +502,7 @@ private fun DevicesSection(
     scanning: Boolean,
     onScan: () -> Unit,
     onSendToDevice: (NearbyDeviceItem) -> Unit,
+    deviceSendStates: Map<String, String> = emptyMap(),
 ) {
     val colors = Dsh.colors
     val type = Dsh.type
@@ -593,7 +602,16 @@ private fun DevicesSection(
                             )
                         }
                         Spacer(Modifier.width(10.dp))
-                        DshIcon(DshIconKind.ARROW_RIGHT, iconSize = 13.dp, tint = colors.accent)
+                        when (deviceSendStates[device.key]) {
+                            "running" -> CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = colors.accent,
+                            )
+                            "done" -> Text("\u2713", style = type.rowTitle, color = colors.accent)
+                            "fail" -> Text("\u2715", style = type.rowTitle, color = colors.accent)
+                            else -> DshIcon(DshIconKind.ARROW_RIGHT, iconSize = 13.dp, tint = colors.accent)
+                        }
                     }
                 }
             }

@@ -105,6 +105,7 @@ data class AppDetailInfo(
 fun AppManageScreen(
     apps: List<ManagedApp>,
     totalCount: Int,
+    userCount: Int,
     hiddenCount: Int,
     query: String,
     onQueryChange: (String) -> Unit,
@@ -172,7 +173,7 @@ fun AppManageScreen(
                 onFilterChange = onFilterChange,
                 counts = mapOf(
                     AppFilter.ALL to totalCount,
-                    AppFilter.USER to apps.count { !it.isSystem },
+                    AppFilter.USER to userCount,
                     AppFilter.HIDDEN to hiddenCount,
                 ),
             )

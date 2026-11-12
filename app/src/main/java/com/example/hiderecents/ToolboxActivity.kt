@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Box
@@ -41,9 +42,21 @@ class ToolboxActivity : AppCompatActivity() {
     private var hiddenCount by mutableStateOf(0)
     private var hideGuard by mutableStateOf(true)
     private var relaunchOnUnhide by mutableStateOf(true)
+    private var predictiveBack by mutableStateOf(true)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyPredictiveBackPref()
+        // 预测返回手势：返回统一交给 OnBackPressedDispatcher。
+        // 开启 enableOnBackInvokedCallback 后系统不再调用 onBackPressed()，必须走回调。
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    handleBackPressed()
+                }
+            },
+        )
 
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         appTheme = AppTheme.fromPref(prefs.getString("ui_theme", null))
@@ -71,12 +84,14 @@ class ToolboxActivity : AppCompatActivity() {
                             hiddenCount = hiddenCount,
                             hideGuard = hideGuard,
                             relaunchOnUnhide = relaunchOnUnhide,
+                            predictiveBack = predictiveBack,
                             onThemeChange = { setTheme(it) },
                             onToggleKeepAlive = { applyKeepAlive(it) },
                             onToggleNotification = { applyStatusNotification(it) },
                             onToggleExclude = { applyExcludeFromRecents(it) },
                             onHideGuardChange = { applyHideGuard(it) },
                             onRelaunchOnUnhideChange = { applyRelaunchOnUnhide(it) },
+                            onPredictiveBackChange = { applyPredictiveBack(it) },
                             onDismiss = { showSettings = false },
                         )
                     }
@@ -92,6 +107,7 @@ class ToolboxActivity : AppCompatActivity() {
         hiddenCount = prefs.getStringSet("hidden_apps", emptySet())?.size ?: 0
         hideGuard = prefs.getBoolean("hide_guard_enabled", true)
         relaunchOnUnhide = prefs.getBoolean("relaunch_on_unhide", true)
+        predictiveBack = prefs.getBoolean("predictive_back_enabled", true)
     }
 
     private fun buildTools(): List<ToolboxTool> = listOf(
@@ -135,6 +151,9 @@ class ToolboxActivity : AppCompatActivity() {
 
     private fun open(target: Class<*>) {
         startActivity(Intent(this, target))
+        // 工具页进场同样用纯位移 220ms，与返回的 slide_right 对称
+        @Suppress("DEPRECATION")
+        overridePendingTransition(R.anim.enter_right_to_left, 0)
     }
 
     // ------------------------------------------------------------------ 设置
@@ -191,6 +210,13 @@ class ToolboxActivity : AppCompatActivity() {
         ).show()
     }
 
+    private fun applyPredictiveBack(value: Boolean) {
+        prefs.edit().putBoolean("predictive_back_enabled", value).apply()
+        predictiveBack = value
+        applyPredictiveBackPref()
+        Toast.makeText(this, if (value) "已开启预测返回手势" else "已关闭预测返回手势", Toast.LENGTH_SHORT).show()
+    }
+
     private fun applyRelaunchOnUnhide(value: Boolean) {
         prefs.edit().putBoolean("relaunch_on_unhide", value).apply()
         relaunchOnUnhide = value
@@ -218,8 +244,7 @@ class ToolboxActivity : AppCompatActivity() {
         // 同理：退出不覆盖转场，与其它页面一致（系统默认向右滑出）。
     }
 
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
+    private fun handleBackPressed() {
         if (showSettings) {
             showSettings = false
             return

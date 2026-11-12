@@ -17,6 +17,7 @@ import android.os.Parcel
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
@@ -140,6 +141,17 @@ class AppManageActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyPredictiveBackPref()
+        // 预测返回手势：返回统一交给 OnBackPressedDispatcher。
+        // 开启 enableOnBackInvokedCallback 后系统不再调用 onBackPressed()，必须走回调。
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    handleBackPressed()
+                }
+            },
+        )
 
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         hiddenApps.addAll(prefs.getStringSet("hidden_apps", emptySet()) ?: emptySet())
@@ -183,6 +195,7 @@ class AppManageActivity : AppCompatActivity() {
                 AppManageScreen(
                     apps = visible,
                     totalCount = allApps.size,
+                    userCount = allApps.count { !it.isSystem },
                     hiddenCount = allApps.count { it.isHidden },
                     query = query,
                     onQueryChange = { query = it },
@@ -282,8 +295,7 @@ class AppManageActivity : AppCompatActivity() {
         finish()
     }
 
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
+    private fun handleBackPressed() {
         goBack()
     }
 
@@ -352,7 +364,7 @@ class AppManageActivity : AppCompatActivity() {
         loading = true
         Thread {
             try {
-                val binder = taskHideService
+                val binder = TaskHideBridge.resolve(taskHideService)
                 if (binder == null) {
                     runOnUiThread { loadInstalledAppsLocal() }
                     return@Thread
@@ -660,7 +672,7 @@ class AppManageActivity : AppCompatActivity() {
         // 改走 Shizuku 的 shell 通道执行 monkey，等同 adb shell 拉起，不触发该弹窗；
         // Shizuku 不可用时才回落到 startActivity。
         Thread {
-            val binder = taskHideService
+            val binder = TaskHideBridge.resolve(taskHideService)
             if (binder != null) {
                 val data = Parcel.obtain()
                 val reply = Parcel.obtain()
@@ -810,7 +822,7 @@ class AppManageActivity : AppCompatActivity() {
             return
         }
         Thread {
-            val binder = taskHideService ?: return@Thread
+            val binder = TaskHideBridge.resolve(taskHideService) ?: return@Thread
             val data = Parcel.obtain()
             val reply = Parcel.obtain()
             try {
@@ -847,7 +859,7 @@ class AppManageActivity : AppCompatActivity() {
     }
 
     private fun callSetInvisible(packageName: String, invisible: Boolean): Boolean {
-        val binder = taskHideService ?: return false
+        val binder = TaskHideBridge.resolve(taskHideService) ?: return false
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {

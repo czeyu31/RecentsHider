@@ -44,7 +44,7 @@ import java.io.File
  *
  * 与原实现的一处差异：不再用匀速假进度，改为真实阶段（准备 / 复制 / 安装 / 结果）。
  */
-class ApkDetailActivity : AppCompatActivity() {
+class ApkDetailActivity : DshActivity() {
 
     private lateinit var prefs: SharedPreferences
     private val handler = Handler(Looper.getMainLooper())
@@ -85,14 +85,14 @@ class ApkDetailActivity : AppCompatActivity() {
             DshTheme(theme = theme) {
                 val current = info
                 if (current == null) {
-                    LoadingShell(onBack = { finish() })
+                    LoadingShell(onBack = { dshGoBack() })
                 } else {
                     ApkDetailScreen(
                         info = current,
                         stage = stage,
                         errorMessage = errorMessage,
                         installed = installed,
-                        onBack = { finish() },
+                        onBack = { dshGoBack() },
                         onInstall = { startInstall() },
                         onOpen = { openInstalledApp() },
                     )
@@ -301,12 +301,12 @@ class ApkDetailActivity : AppCompatActivity() {
 
         Thread {
             var waitCount = 0
-            while (taskHideService == null && waitCount < 40) {
+            while (TaskHideBridge.resolve(taskHideService) == null && waitCount < 40) {
                 Thread.sleep(250)
                 waitCount++
             }
 
-            val binder = taskHideService
+            val binder = TaskHideBridge.resolve(taskHideService)
             if (binder == null) {
                 handler.post {
                     installing = false

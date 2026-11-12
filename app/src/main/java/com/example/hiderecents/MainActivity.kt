@@ -67,6 +67,7 @@ class MainActivity : AppCompatActivity() {
     private var showSettings by mutableStateOf(false)
     private var hideGuard by mutableStateOf(true)
     private var relaunchOnUnhide by mutableStateOf(true)
+    private var predictiveBack by mutableStateOf(true)
     private var keepAliveBatteryOk by mutableStateOf(false)
     private var keepAliveAutoStartOk by mutableStateOf(false)
     private var keepAliveAutoStartUnknown by mutableStateOf(false)
@@ -111,6 +112,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyPredictiveBackPref()
 
         AppLogger.init(this)
         AppLogger.i("MainActivity onCreate (compose)")
@@ -119,6 +121,7 @@ class MainActivity : AppCompatActivity() {
         appTheme = AppTheme.fromPref(prefs.getString("ui_theme", null))
         hideGuard = prefs.getBoolean("hide_guard_enabled", true)
         relaunchOnUnhide = prefs.getBoolean("relaunch_on_unhide", true)
+        predictiveBack = prefs.getBoolean("predictive_back_enabled", true)
         applySystemBars()
 
         setContent {
@@ -127,9 +130,9 @@ class MainActivity : AppCompatActivity() {
                     state = homeState,
                     onOpenToolbox = {
                         startActivity(Intent(this@MainActivity, ToolboxActivity::class.java))
-                        // 不覆盖转场：与其它页面完全一致，走系统默认的右→左滑入。
-                        // R.anim.slide_left 里带 alpha 0.5→1.0 淡入，过渡期间整个工具箱窗口是半透明的，
-                        // 下面的首页内容会透上来 —— 这就是「只有工具箱有黑幕/透出」的来源。
+                        // 进场：纯位移（无 alpha），220ms ease-out，与返回的 slide_right 时长对称
+                        @Suppress("DEPRECATION")
+                        overridePendingTransition(R.anim.enter_right_to_left, 0)
                     },
                     onOpenAccessibility = { openAccessibility() },
                     onOpenSettings = { showSettings = true },
@@ -151,12 +154,14 @@ class MainActivity : AppCompatActivity() {
                         hiddenCount = homeState.hiddenCount,
                         hideGuard = hideGuard,
                             relaunchOnUnhide = relaunchOnUnhide,
+                            predictiveBack = predictiveBack,
                         onThemeChange = { setTheme(it) },
                         onToggleKeepAlive = { toggleKeepAlive(it) },
                         onToggleNotification = { toggleNotification(it) },
                         onToggleExclude = { toggleExcludeFromRecents(it) },
                         onHideGuardChange = { applyHideGuard(it) },
                             onRelaunchOnUnhideChange = { applyRelaunchOnUnhide(it) },
+                            onPredictiveBackChange = { applyPredictiveBack(it) },
                         onDismiss = { showSettings = false },
                     )
                 }
@@ -201,6 +206,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------ 主题
+
+    private fun applyPredictiveBack(value: Boolean) {
+        prefs.edit().putBoolean("predictive_back_enabled", value).apply()
+        predictiveBack = value
+        applyPredictiveBackPref()
+        Toast.makeText(this, if (value) "已开启预测返回手势" else "已关闭预测返回手势", Toast.LENGTH_SHORT).show()
+    }
 
     private fun applyRelaunchOnUnhide(value: Boolean) {
         prefs.edit().putBoolean("relaunch_on_unhide", value).apply()
@@ -801,13 +813,13 @@ class MainActivity : AppCompatActivity() {
     private fun openAccessibility() {
         startActivity(Intent(this, AccessibilityManageActivity::class.java))
         @Suppress("DEPRECATION")
-        overridePendingTransition(R.anim.slide_left, 0)
+        overridePendingTransition(R.anim.enter_right_to_left, 0)
     }
 
     // ------------------------------------------------------------------ 命令通道
 
     private fun executeCommandSync(command: String): String {
-        val binder = taskHideService ?: return ""
+        val binder = TaskHideBridge.resolve(taskHideService) ?: return ""
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {

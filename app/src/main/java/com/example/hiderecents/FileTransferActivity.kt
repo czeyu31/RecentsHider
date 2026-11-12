@@ -99,7 +99,7 @@ import java.util.concurrent.ConcurrentHashMap
  * - 设备直传 multipart POST
  * - 传输任务五态、共享文件移除、下载位置与自动安装设置
  */
-class FileTransferActivity : AppCompatActivity() {
+class FileTransferActivity : DshActivity() {
 
     private companion object {
         const val REQ_PICK_FILE = 1001
@@ -110,7 +110,7 @@ class FileTransferActivity : AppCompatActivity() {
 
     private lateinit var prefs: SharedPreferences
     private lateinit var downloadDir: File
-    private var autoInstallApk = false
+    private var autoInstallApk by mutableStateOf(false)
 
     private var httpServer: SimpleHttpServer? = null
     private var udpListener: java.net.DatagramSocket? = null
@@ -134,7 +134,7 @@ class FileTransferActivity : AppCompatActivity() {
     private var scanning by mutableStateOf(false)
     private var tasksState by mutableStateOf(listOf<TransferTaskItem>())
     private var sharedState by mutableStateOf(listOf<SharedFileItem>())
-    private var availableSpace by mutableStateOf("\u2014")
+    private var availableSpace by mutableStateOf("—")
     private var totalTransferred by mutableStateOf("0 B")
 
     private var showSettings by mutableStateOf(false)
@@ -142,6 +142,11 @@ class FileTransferActivity : AppCompatActivity() {
     private var showAppPicker by mutableStateOf(false)
     private var appQuery by mutableStateOf("")
     private var appOptions by mutableStateOf(listOf<Pair<String, String>>())
+    /** 「选择应用」里是否显示系统应用（默认不显示，避免列表被系统包淹没）。 */
+    private var showSystemApps by mutableStateOf(false)
+
+    /** 每个设备一条发送状态：缺省 idle / running 圆环 / done 勾 / fail 叉。 */
+    private var deviceSendStates by mutableStateOf(mapOf<String, String>())
 
     data class DeviceInfo(
         val ip: String,
@@ -195,6 +200,7 @@ class FileTransferActivity : AppCompatActivity() {
 
         prefs = getSharedPreferences("file_transfer_settings", Context.MODE_PRIVATE)
         autoInstallApk = prefs.getBoolean("auto_install_apk", false)
+        showSystemApps = prefs.getBoolean("show_system_apps", false)
         prefs.edit().remove("download_path").apply()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
@@ -232,8 +238,9 @@ class FileTransferActivity : AppCompatActivity() {
                     totalTransferredLabel = totalTransferred,
                     sharedFiles = sharedState,
                     availableSpaceLabel = availableSpace,
-                    onBack = { finish() },
+                    onBack = { dshGoBack() },
                     onScan = { startDiscovery() },
+                    deviceSendStates = deviceSendStates,
                     onOpenSettings = { showSettings = true },
                     onCopyUrl = { copyShareUrl() },
                     onRemoveSharedFile = { id ->
@@ -242,7 +249,10 @@ class FileTransferActivity : AppCompatActivity() {
                         if (sharedFiles.isEmpty()) shareUrl = null
                     },
                     onSendToDevice = { device ->
-                        discoveredDevices[device.key]?.let { sendFileToDevice(it) }
+                        discoveredDevices[device.key]?.let { target ->
+                            deviceSendStates = deviceSendStates + (device.key to "running")
+                            sendFileToDevice(target, device.key)
+                        }
                     },
                     onOpenTaskFile = { task -> openTaskFile(task.id) },
                 )
@@ -281,6 +291,12 @@ class FileTransferActivity : AppCompatActivity() {
                 if (showAppPicker) {
                     AppPickerSheet(
                         query = appQuery,
+                        showSystemApps = showSystemApps,
+                        onToggleShowSystemApps = { value ->
+                            showSystemApps = value
+                            prefs.edit().putBoolean("show_system_apps", value).apply()
+                            appOptions = filterApps(appQuery)
+                        },
                         onQueryChange = { query ->
                             appQuery = query
                             appOptions = filterApps(query)
@@ -375,7 +391,7 @@ class FileTransferActivity : AppCompatActivity() {
     private fun autoGrantMediaPermission() {
         Thread {
             try {
-                val binder = taskHideService ?: return@Thread
+                val binder = TaskHideBridge.resolve(taskHideService) ?: return@Thread
                 val cmds = listOf(
                     "appops set $packageName READ_MEDIA_IMAGES allow",
                     "appops set $packageName READ_MEDIA_VIDEO allow",
@@ -405,7 +421,8 @@ class FileTransferActivity : AppCompatActivity() {
     }
 
     private fun execCommand(cmd: String): Pair<Boolean, String> {
-        val binder = taskHideService ?: return Pair(false, "")
+        // 本页自己 bind 的用户服务常常还没就绪，优先复用进程内已连好的那个。
+        val binder = TaskHideBridge.resolve(taskHideService) ?: TaskHideBridge.binder ?: return Pair(false, "")
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {
@@ -815,11 +832,42 @@ class FileTransferActivity : AppCompatActivity() {
         addSharedFile(file)
     }
 
+    /**
+     * 枚举可选应用。
+     *
+     * 为什么不用单一 getInstalledApplications：这台 ROM 上它只返回本应用自己，
+     * 导致「选择应用」列表只有一条；MAIN/LAUNCHER 查询能拿到完整可启动应用集合，
+     * 两路合并去重后即可覆盖全部。
+     */
+    private fun collectAppInfos(pm: android.content.pm.PackageManager): List<android.content.pm.ApplicationInfo> {
+        val merged = LinkedHashMap<String, android.content.pm.ApplicationInfo>()
+        runCatching { pm.getInstalledApplications(0) }.getOrDefault(emptyList()).forEach { merged[it.packageName] = it }
+        runCatching {
+            val launch = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            for (ri in pm.queryIntentActivities(launch, 0)) {
+                val pkg = ri.activityInfo?.packageName ?: continue
+                if (merged.containsKey(pkg)) continue
+                val info = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull() ?: continue
+                merged[pkg] = info
+            }
+        }
+        return merged.values.toList()
+    }
+
     private fun filterApps(query: String): List<Pair<String, String>> {
         val pm = packageManager
-        val all = pm.getInstalledApplications(0)
+        // 这台 ROM 上 getInstalledApplications 只返回本应用自己（实测选择应用列表只有 1 条），
+        // 所以改走 collectAppInfos()：直连枚举 + MAIN/LAUNCHER 查询两路合并去重。
+        val all = collectAppInfos(pm)
+        AppLogger.i("filterApps: candidates=" + all.size + " showSystemApps=" + showSystemApps)
         val needle = query.trim().lowercase()
         return all.mapNotNull { info ->
+            // 「显示系统应用」关闭时（默认）不列出系统应用：系统包几百个，会把用户应用淹没。
+            if (!showSystemApps &&
+                (info.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+            ) {
+                return@mapNotNull null
+            }
             val label = try {
                 pm.getApplicationLabel(info).toString()
             } catch (_: Exception) {
@@ -1099,36 +1147,25 @@ class FileTransferActivity : AppCompatActivity() {
 
     private fun installApkViaShizuku(apkFile: File): Boolean {
         try {
-            if (taskHideService != null) {
-                val cmd = "cat ${apkFile.absolutePath} | pm install -S ${apkFile.length()}"
-                val (ok, out) = execCommand(cmd)
-                AppLogger.i("installApk: success=$ok output=${out.take(200)}")
-                if (ok || out.contains("Success")) return true
+            // 优先复用进程内已连好的 binder：本页自己 bind 的用户服务常常还没就绪。
+            var waited = 0
+            if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+                while (TaskHideBridge.resolve(taskHideService) == null && waited < 3000) {
+                    Thread.sleep(100)
+                    waited += 100
+                }
+            }
+            // 与「APK 安装器」页共用同一份静默安装逻辑，全程后台，不打开任何页面。
+            val res = SilentApkInstaller.install(apkFile, taskHideService)
+            AppLogger.i("installApk: waited=${waited}ms ok=${res.first} output=${res.second.take(240)}")
+            if (res.first) return true
+            runOnUiThread {
+                Toast.makeText(this, "静默安装失败：" + res.second.take(80), Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
             AppLogger.e("installApk: Shizuku failed", e)
         }
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                !packageManager.canRequestPackageInstalls()
-            ) {
-                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
-                intent.data = Uri.parse("package:$packageName")
-                startActivity(intent)
-                return false
-            }
-            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apkFile)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(intent)
-            return true
-        } catch (e: Exception) {
-            AppLogger.e("installApk: system installer failed", e)
-        }
+        // 失败时不再自动拉起系统安装器（用户明确不想看到那个页面），只保留上面的提示。
         return false
     }
 
@@ -1178,12 +1215,14 @@ class FileTransferActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ 设备直传
 
-    private fun sendFileToDevice(device: DeviceInfo) {
+    private fun sendFileToDevice(device: DeviceInfo, deviceKey: String) {
         if (sharedFiles.isEmpty()) {
             Toast.makeText(this, "请先添加文件", Toast.LENGTH_SHORT).show()
+            deviceSendStates = deviceSendStates - deviceKey
             return
         }
         Thread {
+            var anyFailed = false
             for ((_, file) in sharedFiles) {
                 try {
                     val boundary = "----SystemTool" + System.currentTimeMillis()
@@ -1218,14 +1257,20 @@ class FileTransferActivity : AppCompatActivity() {
                     outputStream.close()
                     conn.disconnect()
                 } catch (e: Exception) {
+                    anyFailed = true
                     AppLogger.e("Send failed to ${device.ip}", e)
                 }
             }
             val names = sharedFiles.values.joinToString(", ") { it.name }
             val total = sharedFiles.values.sumOf { it.length() }
+            val failed = anyFailed
             runOnUiThread {
-                Toast.makeText(this, "发送完成", Toast.LENGTH_SHORT).show()
-                addTask(names, device.alias, true, total)
+                Toast.makeText(this, if (failed) "发送失败" else "发送完成", Toast.LENGTH_SHORT).show()
+                deviceSendStates = deviceSendStates + (deviceKey to if (failed) "fail" else "done")
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    deviceSendStates = deviceSendStates - deviceKey
+                }, 3000L)
+                if (!failed) addTask(names, device.alias, true, total)
             }
         }.start()
     }
@@ -1521,6 +1566,8 @@ private fun TextInputDialog(
 @Composable
 private fun AppPickerSheet(
     query: String,
+    showSystemApps: Boolean,
+    onToggleShowSystemApps: (Boolean) -> Unit,
     onQueryChange: (String) -> Unit,
     options: List<Pair<String, String>>,
     onDismiss: () -> Unit,
@@ -1550,7 +1597,18 @@ private fun AppPickerSheet(
                     .border(1.dp, colors.hairlineStrong, RoundedCornerShape(dimens.panelRadius))
                     .padding(18.dp),
             ) {
-                Text("选择应用", style = type.h2, color = colors.ink)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("选择应用", style = type.h2, color = colors.ink)
+                    Spacer(Modifier.weight(1f))
+                    // 标题右侧空白处：是否显示系统应用
+                    Text(
+                        text = "显示系统应用",
+                        style = type.caption,
+                        color = colors.inkFaint,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    DshSwitch(checked = showSystemApps, onCheckedChange = onToggleShowSystemApps)
+                }
                 Spacer(Modifier.height(6.dp))
                 Text("选中的应用会导出为 APK 分享", style = type.caption, color = colors.inkFaint)
                 Spacer(Modifier.height(14.dp))

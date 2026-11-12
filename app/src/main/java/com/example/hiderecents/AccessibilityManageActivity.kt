@@ -44,7 +44,7 @@ import kotlin.math.abs
  * - 守护服务确保开启，失败回落系统无障碍设置页
  * - 四字段搜索、三档筛选、长按置顶与保护、右滑返回
  */
-class AccessibilityManageActivity : AppCompatActivity() {
+class AccessibilityManageActivity : DshActivity() {
 
     companion object {
         private const val TAG = "AccessibilityManage"
@@ -61,6 +61,9 @@ class AccessibilityManageActivity : AppCompatActivity() {
 
     private var allItems by mutableStateOf(listOf<A11yServiceItem>())
     private var loading by mutableStateOf(true)
+
+    /** 后台补图标的线程：列表先发布，图标再逐批填，避免首屏串行等主线程。 */
+    private var a11yIconJob: Thread? = null
     private var query by mutableStateOf("")
     private var filter by mutableStateOf(A11yFilter.ALL)
     private var autoProtect by mutableStateOf(false)
@@ -114,6 +117,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
                 AccessibilityScreen(
                     services = visible,
                     totalCount = allItems.size,
+                    userCount = allItems.count { !it.isSystem },
                     enabledCount = allItems.count { it.isEnabled },
                     protectedCount = activeProtectedCount(),
                     autoProtect = autoProtect,
@@ -123,7 +127,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
                     filter = filter,
                     onFilterChange = { filter = it },
                     loading = loading,
-                    onBack = { finish() },
+                    onBack = { dshGoBack() },
                     onToggleAutoProtect = { applyAutoProtect(it) },
                     onToggleService = { item, enable -> toggleService(item, enable) },
                     onOpenActions = { actionItem = it },
@@ -313,6 +317,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
                 val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
                 val installed = am.installedAccessibilityServiceList ?: emptyList()
                 val currentEnabled = getEnabledServices()
+                Log.d(TAG, "a11y installed=" + installed.size + " enabled=" + currentEnabled.size)
                 val pm = packageManager
 
                 val items = installed.mapNotNull { info ->
@@ -340,10 +345,18 @@ class AccessibilityManageActivity : AppCompatActivity() {
                     }
                 }
 
-                val sorted = if (consumeStableSortFlag()) sortItemsStable(items) else sortItemsInitial(items)
+                // 首次加载排好序之后不再重排：开关只改状态，位置必须原地不动。
+                // 旧实现每次开关都重排成「按名称」顺序，用户看到的就是「其他已开启的服务都恢复到正常排序」。
+                val sorted = if (!initialSortDone) {
+                    initialSortDone = true
+                    sortItemsInitial(items)
+                } else {
+                    sortItemsPreserveOrder(items)
+                }
 
                 runOnUiThread {
                     allItems = sorted
+                    startA11yIconFill()
                     loading = false
                     keepAliveEnabled = isKeepAliveServiceEnabled()
                 }
@@ -354,23 +367,57 @@ class AccessibilityManageActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun loadIconBitmap(pm: PackageManager, pkg: String): androidx.compose.ui.graphics.ImageBitmap? {
-        iconCache[pkg]?.let { return it }
-        return try {
-            val drawable = AppIconLoader.getCached(pkg)
-                ?: pm.getApplicationIcon(pm.getApplicationInfo(pkg, 0)).also {
-                    AppIconLoader.put(pkg, it)
+        /**
+     * 后台补无障碍服务图标。
+     *
+     * 为什么需要：30 个服务若都在列表可见之前栅格化，首屏要等很久（用户看到骨架屏 + 0/0）。
+     * 这里把「取 drawable + 栅格化」交给 AppIconLoader.bitmapFor（内部会切主线程），
+     * 每 8 个回主线程合并一次，列表先可见、图标随后补齐。
+     */
+    private fun startA11yIconFill() {
+        if (a11yIconJob?.isAlive == true) return
+        val targets = allItems.filter { it.icon == null }.map { it.packageName }.distinct()
+        if (targets.isEmpty()) return
+        a11yIconJob = Thread {
+            val pm = packageManager
+            val batch = LinkedHashMap<String, androidx.compose.ui.graphics.ImageBitmap>()
+            for (pkg in targets) {
+                if (Thread.currentThread().isInterrupted) return@Thread
+                val bmp = AppIconLoader.bitmapFor(pm, pkg, 96)
+                if (bmp != null) batch[pkg] = bmp.asImageBitmap()
+                if (batch.size >= 8) {
+                    applyA11yIcons(batch)
+                    batch.clear()
                 }
-            val bitmap = AppIconLoader.toSafeBitmap(drawable, 96).asImageBitmap()
-            iconCache[pkg] = bitmap
-            bitmap
-        } catch (_: Exception) {
-            null
+            }
+            if (batch.isNotEmpty()) applyA11yIcons(batch)
+            Log.d(TAG, "a11y icon fill done n=" + targets.size)
+        }.also { it.isDaemon = true }
+        a11yIconJob?.start()
+    }
+
+    private fun applyA11yIcons(batch: Map<String, androidx.compose.ui.graphics.ImageBitmap>) {
+        val snapshot = LinkedHashMap(batch)
+        runOnUiThread {
+            allItems = allItems.map { item ->
+                val bmp = snapshot[item.packageName]
+                if (bmp != null && item.icon == null) item.copy(icon = bmp) else item
+            }
         }
+    }
+private fun loadIconBitmap(pm: PackageManager, pkg: String): androidx.compose.ui.graphics.ImageBitmap? {
+        // 只取缓存，绝不在首屏做「主线程栅格化 + latch 等待」。
+        // 实测本机 30 个无障碍服务逐个走 toSafeBitmap 时，界面会长时间停在骨架屏、计数全是 0
+        // （23:54 那张 0 / 0 个服务已启用就是这么来的）。未命中的先留空，由 startA11yIconFill() 后台补。
+        return iconCache[pkg] ?: AppIconLoader.getCachedBitmap(pkg)?.asImageBitmap()
     }
 
     @Volatile
     private var nextSortStable = false
+
+    /** 首次加载排好序后置 true，之后所有重新加载都保持当前顺序。 */
+    @Volatile
+    private var initialSortDone = false
 
     /** 进入页面时的排序：已开启 / 已保护的服务排到最上面。 */
     private fun sortItemsInitial(list: List<A11yServiceItem>): List<A11yServiceItem> =
@@ -385,6 +432,16 @@ class AccessibilityManageActivity : AppCompatActivity() {
      * 开关变化时的稳定排序：只看置顶 + 名称，位置原地不动。
      * 旧实现把 isProtected / isEnabled 放进比较器，一按开关整列表就跳到顶部。
      */
+    /** 按上一轮列表位置排序：已知项保持原位，新出现的按名称追加。 */
+    private fun sortItemsPreserveOrder(items: List<A11yServiceItem>): List<A11yServiceItem> {
+        if (allItems.isEmpty()) return sortItemsInitial(items)
+        val index = HashMap<String, Int>()
+        allItems.forEachIndexed { i, item -> index[item.componentName] = i }
+        return items.sortedWith(
+            compareBy<A11yServiceItem>({ index[it.componentName] ?: Int.MAX_VALUE }, { it.appName.lowercase() }),
+        )
+    }
+
     private fun sortItemsStable(list: List<A11yServiceItem>): List<A11yServiceItem> =
         list.sortedWith(
             compareByDescending<A11yServiceItem> { it.isPinned }
@@ -434,7 +491,15 @@ class AccessibilityManageActivity : AppCompatActivity() {
             )
             if (!flat.isNullOrEmpty()) {
                 flat.split(':').forEach { component ->
-                    if (component.isNotBlank()) result.add(component.trim())
+                    if (component.isNotBlank()) {
+                        val raw = component.trim()
+                        result.add(raw)
+                        // settings 里存的是缩写形式（pkg/.Service），而列表项用的是
+                        // ComponentName(pkg, name).flattenToString() 的全名形式。
+                        // 直接逐字符比对会漏判：实测系统里 3 条已启用，页面只算出 1 条。
+                        val norm = ComponentName.unflattenFromString(raw)?.flattenToString()
+                        if (norm != null) result.add(norm)
+                    }
                 }
             }
         } catch (_: Exception) {
@@ -443,8 +508,9 @@ class AccessibilityManageActivity : AppCompatActivity() {
     }
 
     private fun activeProtectedCount(): Int {
-        val userDisabled = prefs.getStringSet("user_disabled_a11y", emptySet()) ?: emptySet()
-        return protectedServices.count { it !in userDisabled }
+        // 与列表里 isProtected 同源：只要在保护名单里就算「已保护」。
+        // 旧实现排除了 user_disabled_a11y，导致行内显示「防回收保护中」而底部计数是 0（自相矛盾）。
+        return protectedServices.size
     }
 
     // ------------------------------------------------------------------ 开关服务
@@ -578,7 +644,7 @@ class AccessibilityManageActivity : AppCompatActivity() {
     // ------------------------------------------------------------------ 命令通道
 
     private fun executeCommandSync(command: String): Boolean {
-        val binder = taskHideService ?: return false
+        val binder = TaskHideBridge.resolve(taskHideService) ?: return false
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {

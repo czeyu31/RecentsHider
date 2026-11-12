@@ -47,12 +47,14 @@ fun SettingsDialog(
     hiddenCount: Int,
     hideGuard: Boolean,
     relaunchOnUnhide: Boolean,
+    predictiveBack: Boolean,
     onThemeChange: (AppTheme) -> Unit,
     onToggleKeepAlive: (Boolean) -> Unit,
     onToggleNotification: (Boolean) -> Unit,
     onToggleExclude: (Boolean) -> Unit,
     onHideGuardChange: (Boolean) -> Unit,
     onRelaunchOnUnhideChange: (Boolean) -> Unit,
+    onPredictiveBackChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val colors = Dsh.colors
@@ -143,6 +145,13 @@ fun SettingsDialog(
                     desc = "关闭后取消隐藏不会把应用拉到前台",
                     checked = relaunchOnUnhide,
                     onCheckedChange = onRelaunchOnUnhideChange,
+                )
+                DshDivider()
+                SettingSwitchRow(
+                        title = "预测返回手势",
+                        desc = "返回时先预览上一页；部分机型不支持时无变化",
+                        checked = predictiveBack,
+                        onCheckedChange = onPredictiveBackChange,
                 )
 
                 Spacer(Modifier.height(22.dp))

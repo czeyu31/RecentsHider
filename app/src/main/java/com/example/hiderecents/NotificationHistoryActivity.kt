@@ -40,7 +40,7 @@ import rikka.shizuku.Shizuku
  * - 记录侧排除筛选（notif_excluded_apps）与展示侧按应用筛选
  * - 一键清空历史
  */
-class NotificationHistoryActivity : AppCompatActivity() {
+class NotificationHistoryActivity : DshActivity() {
 
     private lateinit var prefs: SharedPreferences
 
@@ -96,7 +96,7 @@ class NotificationHistoryActivity : AppCompatActivity() {
                     onSelectPackage = { selectedPackage = it },
                     permissionGranted = permissionGranted,
                     onRequestPermission = { openPermissionSettings() },
-                    onBack = { finish() },
+                    onBack = { dshGoBack() },
                     onOpenFilter = { showFilter = true },
                     onClearAll = { clearAll() },
                 )
@@ -176,7 +176,7 @@ class NotificationHistoryActivity : AppCompatActivity() {
     }
 
     private fun executeCommandSync(command: String): String {
-        val binder = taskHideService ?: return ""
+        val binder = TaskHideBridge.resolve(taskHideService) ?: return ""
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {
