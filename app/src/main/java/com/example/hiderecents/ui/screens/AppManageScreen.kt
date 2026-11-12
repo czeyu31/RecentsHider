@@ -119,6 +119,7 @@ fun AppManageScreen(
     modifier: Modifier = Modifier,
     shizukuReady: Boolean = true,
     onOpenShizuku: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val colors = Dsh.colors
     val dimens = Dsh.dimens
@@ -157,6 +158,20 @@ fun AppManageScreen(
                         style = type.label,
                         color = colors.inkFaint,
                     )
+                }
+                // 本页自己的设置（恢复时是否回到前台）：右上角入口
+                Box(
+                    Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(dimens.iconRadius))
+                        .dshClickable(onClick = onOpenSettings),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (Dsh.surface.hasPanels) {
+                        DshIcon(DshIconKind.SLIDERS, iconSize = 15.dp, tint = colors.inkMuted)
+                    } else {
+                        Text("设置", style = type.caption, color = colors.inkMuted)
+                    }
                 }
             }
 

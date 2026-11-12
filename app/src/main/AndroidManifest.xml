@@ -32,7 +32,6 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
     <application
-        android:enableOnBackInvokedCallback="true"
         android:name=".DshApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -64,13 +63,19 @@
              那个主题带 backgroundDimEnabled + backgroundDimAmount=0.7 与 windowIsTranslucent，
              滑入时窗口还没覆盖到的区域会露出这层压暗 —— 用户看到的就是「黑幕」。
              改用 application 的 Theme.HideRecents，与其它页面完全一致。 -->
-        <activity android:name=".ToolboxActivity" />
+        <activity
+            android:name=".ToolboxActivity" />
 
-        <activity android:name=".AppManageActivity" />
-        <activity android:name=".AdbActivity" />
-        <activity android:name=".NotificationHistoryActivity" />
-        <activity android:name=".FileTransferActivity" />
-        <activity android:name=".ApkInstallerActivity" />
+        <activity
+            android:name=".AppManageActivity" />
+        <activity
+            android:name=".AdbActivity" />
+        <activity
+            android:name=".NotificationHistoryActivity" />
+        <activity
+            android:name=".FileTransferActivity" />
+        <activity
+            android:name=".ApkInstallerActivity" />
         <activity
             android:name=".ApkDetailActivity"
             android:exported="true">
@@ -118,8 +123,10 @@
                 <data android:scheme="file" />
             </intent-filter>
         </activity>
-        <activity android:name=".FilePickerActivity" />
-        <activity android:name=".AccessibilityManageActivity" />
+        <activity
+            android:name=".FilePickerActivity" />
+        <activity
+            android:name=".AccessibilityManageActivity" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -154,6 +161,17 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_keepalive_config" />
+        </service>
+        <service
+            android:name=".InstallConfirmService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/install_confirm_config" />
         </service>
 
         <service
@@ -227,6 +245,10 @@
             android:exported="true"
             android:multiprocess="false"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <receiver
+            android:name=".ApkInstallReceiver"
+            android:exported="false" />
 
     </application>
 

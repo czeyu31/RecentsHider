@@ -16,19 +16,27 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshIcon
 import com.example.hiderecents.ui.components.DshIconKind
@@ -43,15 +51,6 @@ import com.example.hiderecents.ui.theme.Dsh
 enum class AdbLineKind { COMMAND, OUTPUT, DIVIDER }
 
 data class AdbOutputLine(val text: String, val kind: AdbLineKind)
-
-/** 常用命令：点一下即执行 */
-val AdbQuickCommands = listOf(
-    "pm list packages",
-    "pm list packages -3",
-    "getprop ro.product.model",
-    "dumpsys battery",
-    "settings get secure enabled_accessibility_services",
-)
 
 /**
  * ADB 命令页。
@@ -77,7 +76,6 @@ fun AdbScreen(
     onBack: () -> Unit,
     onClear: () -> Unit,
     onExecute: () -> Unit,
-    onQuickCommand: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = Dsh.colors
@@ -85,6 +83,8 @@ fun AdbScreen(
     val type = Dsh.type
     val hasPanels = Dsh.surface.hasPanels
     val consoleScroll = rememberScrollState()
+    var commandsOpen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
@@ -160,7 +160,11 @@ fun AdbScreen(
             // 键盘可见时让位：设备块与常用命令都收起，把高度全给输出框
             if (!imeVisible) {
                 StaggeredEnter(index = 0) {
-                    DeviceBlock(model = deviceModel, info = deviceInfo)
+                    DeviceBlock(
+                        model = deviceModel,
+                        info = deviceInfo,
+                        onOpenCommands = { commandsOpen = true },
+                    )
                 }
                 Spacer(Modifier.height(dimens.gapM))
             }
@@ -170,27 +174,34 @@ fun AdbScreen(
                 ConsoleBlock(output = output, scroll = consoleScroll)
             }
 
-            if (!imeVisible) {
-                Spacer(Modifier.height(dimens.gapM))
-                StaggeredEnter(index = 2) {
-                    QuickCommands(onQuickCommand = onQuickCommand)
-                }
-            }
-
             Spacer(Modifier.height(if (imeVisible) 10.dp else 22.dp))
+        }
+
+        if (commandsOpen) {
+            AdbCommandPanel(
+                onPick = { cmd ->
+                    // 只填入输入框，不自动执行：命令里的 <…> 需要用户自己替换
+                    commandsOpen = false
+                    onCommandChange(cmd)
+                    if (cmd.contains("<")) {
+                        Toast.makeText(context, "已填入输入框，尖括号处请替换成实际参数", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onDismiss = { commandsOpen = false },
+            )
         }
     }
 }
 
 @Composable
-private fun DeviceBlock(model: String, info: String) {
+private fun DeviceBlock(model: String, info: String, onOpenCommands: () -> Unit) {
     val colors = Dsh.colors
     val type = Dsh.type
     val hasPanels = Dsh.surface.hasPanels
     val dimens = Dsh.dimens
     val shape = RoundedCornerShape(dimens.panelRadius)
 
-    Column(
+    Row(
         Modifier
             .fillMaxWidth()
             .then(
@@ -204,22 +215,65 @@ private fun DeviceBlock(model: String, info: String) {
                     Modifier.padding(vertical = 2.dp)
                 },
             ),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("设备", style = type.label, color = colors.inkFaint)
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = model.ifEmpty { "读取中…" },
-            style = type.title,
-            color = colors.ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = info.ifEmpty { "通过 Shizuku 读取 getprop" },
-            style = type.caption,
-            color = colors.inkFaint,
-        )
+        Column(Modifier.weight(1f)) {
+            Text("设备", style = type.label, color = colors.inkFaint)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = model.ifEmpty { "读取中…" },
+                style = type.title,
+                color = colors.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = info.ifEmpty { "通过 Shizuku 读取 getprop" },
+                style = type.caption,
+                color = colors.inkFaint,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        CommandsEntryButton(onClick = onOpenCommands)
+    }
+}
+
+/** 「常用命令」入口：石墨用描边按钮，纸本用朱红下划线文字按钮。 */
+@Composable
+private fun CommandsEntryButton(onClick: () -> Unit) {
+    val colors = Dsh.colors
+    val type = Dsh.type
+
+    if (Dsh.surface.hasPanels) {
+        val shape = RoundedCornerShape(Dsh.dimens.controlRadius)
+        Box(
+            Modifier
+                .height(38.dp)
+                .clip(shape)
+                .border(1.dp, colors.hairline, shape)
+                .dshClickable(scaleOnPress = false, onClick = onClick)
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("常用命令", style = type.caption, color = colors.ink)
+        }
+    } else {
+        Column(
+            Modifier
+                .dshClickable(scaleOnPress = false, onClick = onClick)
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("常用命令", style = type.caption, color = colors.accent)
+            Spacer(Modifier.height(3.dp))
+            Box(
+                Modifier
+                    .width(48.dp)
+                    .height(1.5.dp)
+                    .background(color = colors.accent),
+            )
+        }
     }
 }
 
@@ -277,63 +331,148 @@ private fun ConsoleBlock(
     }
 }
 
+/**
+ * 常用命令面板：整屏覆盖在控制台上，带搜索与分组。
+ * 点一条命令只回到控制台并填入输入框，不自动执行：命令里的 <…> 需要用户自己替换成实际参数。
+ */
 @Composable
-private fun QuickCommands(onQuickCommand: (String) -> Unit) {
+private fun AdbCommandPanel(
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val colors = Dsh.colors
     val type = Dsh.type
-    val hasPanels = Dsh.surface.hasPanels
     val dimens = Dsh.dimens
-    val shape = RoundedCornerShape(dimens.panelRadius)
+    var query by remember { mutableStateOf("") }
 
-    Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("常用命令", style = type.label, color = colors.inkFaint)
-            Spacer(Modifier.weight(1f))
-            Text("点按执行", style = type.monoSmall, color = colors.inkFaint)
-        }
-        Spacer(Modifier.height(8.dp))
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .then(
-                    if (hasPanels) {
-                        Modifier
-                            .clip(shape)
-                            .background(brush = Brush.verticalGradient(listOf(colors.panelTop, colors.panelBottom)))
-                            .border(1.dp, colors.hairline, shape)
-                    } else {
-                        Modifier
-                    },
-                ),
-        ) {
-            AdbQuickCommands.forEachIndexed { index, cmd ->
-                if (index > 0) {
-                    DshDivider(Modifier.padding(horizontal = if (hasPanels) 14.dp else 0.dp))
-                }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .dshClickable(scaleOnPress = false) { onQuickCommand(cmd) }
-                        .padding(
-                            horizontal = if (hasPanels) 14.dp else 0.dp,
-                            vertical = 11.dp,
-                        ),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = cmd,
-                        style = type.monoSmall,
-                        color = colors.inkMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text("运行", style = type.caption, color = colors.accent)
-                }
+    // 搜索按空格拆成多个词，全部命中才算匹配；点、逗号、下划线当空格，
+    // 这样 "pm.list" / "pm,list" / "list pm" 都能搜到 "pm list packages"。
+    val tokens = remember(query) {
+        query.lowercase()
+            .replace(Regex("[.,;:_\\-]+"), " ")
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+    }
+    val filtered = remember(tokens) {
+        if (tokens.isEmpty()) {
+            AdbCommandCatalog
+        } else {
+            AdbCommandCatalog.filter { item ->
+                val hay = (item.command + " " + item.description + " " + item.group).lowercase()
+                tokens.all { hay.contains(it) }
             }
         }
     }
+    val sections = remember(filtered) {
+        val order = LinkedHashMap<String, MutableList<AdbCommandItem>>()
+        filtered.forEach { order.getOrPut(it.group) { mutableListOf() }.add(it) }
+        order.entries.toList()
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(color = colors.canvas)
+            .safeDrawingPadding()
+            .imePadding(),
+    ) {
+        Column(Modifier.fillMaxSize().padding(horizontal = dimens.screenPadding)) {
+            Spacer(Modifier.height(4.dp))
+
+            Row(
+                Modifier.fillMaxWidth().height(56.dp).paperHeaderRule(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier
+                        .width(32.dp)
+                        .height(32.dp)
+                        .clip(RoundedCornerShape(dimens.iconRadius))
+                        .dshClickable(onClick = onDismiss),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    DshIcon(DshIconKind.BACK, iconSize = 15.dp, tint = colors.inkMuted)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("常用命令", style = type.h2, color = colors.ink)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "共 " + AdbCommandCatalog.size + " 条 · 点按填入输入框，<…> 处按需替换",
+                        style = type.label,
+                        color = colors.inkFaint,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(if (Dsh.surface.hasPanels) dimens.gapM else 22.dp))
+
+            DshTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = "搜索命令 / 说明 / 分组",
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(dimens.gapM))
+
+            LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                sections.forEach { (group, items) ->
+                    item(key = "g-" + group) {
+                        Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp)) {
+                            Text(group, style = type.label, color = colors.inkFaint)
+                            Spacer(Modifier.height(8.dp))
+                            DshDivider()
+                        }
+                    }
+                    items(items, key = { it.command + it.group }) { item ->
+                        CommandRow(item = item, onPick = onPick)
+                    }
+                }
+                if (sections.isEmpty()) {
+                    item(key = "empty") {
+                        Text(
+                            "没有匹配的命令，换个关键词试试",
+                            style = type.caption,
+                            color = colors.inkFaint,
+                            modifier = Modifier.padding(vertical = 24.dp),
+                        )
+                    }
+                }
+                item(key = "bottom") { Spacer(Modifier.height(28.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommandRow(item: AdbCommandItem, onPick: (String) -> Unit) {
+    val colors = Dsh.colors
+    val type = Dsh.type
+    val cmdColor = if (item.dangerous) colors.accent else colors.ink
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .dshClickable(scaleOnPress = false) { onPick(item.command) }
+            .padding(vertical = 12.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = item.command,
+                style = type.monoSmall,
+                color = cmdColor,
+                modifier = Modifier.weight(1f),
+            )
+            if (item.dangerous) {
+                Spacer(Modifier.width(8.dp))
+                Text("危险", style = type.caption, color = colors.accent)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(item.description, style = type.caption, color = colors.inkFaint)
+    }
+    DshDivider()
 }
 
 @Composable

@@ -138,6 +138,8 @@ class FileTransferActivity : DshActivity() {
     private var totalTransferred by mutableStateOf("0 B")
 
     private var showSettings by mutableStateOf(false)
+    /** 「系统安装页兜底」：静默安装失败时用系统安装页装完并自动点确认。 */
+    private var installPageFallback by mutableStateOf(true)
     private var showTextDialog by mutableStateOf(false)
     private var showAppPicker by mutableStateOf(false)
     private var appQuery by mutableStateOf("")
@@ -221,6 +223,7 @@ class FileTransferActivity : DshActivity() {
 
         val themePrefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         val theme = AppTheme.fromPref(themePrefs.getString("ui_theme", null))
+        installPageFallback = themePrefs.getBoolean("install_page_fallback", true)
         applySystemBars(theme)
 
         setContent {
@@ -262,6 +265,16 @@ class FileTransferActivity : DshActivity() {
                         downloadPath = downloadDir.absolutePath,
                         autoInstall = autoInstallApk,
                         onToggleAutoInstall = { autoInstallApk = it },
+                        installPageFallback = installPageFallback,
+                        onToggleInstallPageFallback = {
+                            installPageFallback = it
+                            themePrefs.edit().putBoolean("install_page_fallback", it).apply()
+                            Toast.makeText(
+                                this,
+                                if (it) "静默安装失败时会用系统安装页兜底" else "纯静默安装：失败只提示，不弹安装页",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
                         onChangePath = {
                             showSettings = false
                             pickDownloadDir()
@@ -1158,14 +1171,14 @@ class FileTransferActivity : DshActivity() {
             // 与「APK 安装器」页共用同一份静默安装逻辑，全程后台，不打开任何页面。
             val res = SilentApkInstaller.install(apkFile, taskHideService)
             AppLogger.i("installApk: waited=${waited}ms ok=${res.first} output=${res.second.take(240)}")
+            // 系统安装页兜底已收进 SilentApkInstaller.install（受偏好 install_page_fallback 控制）
             if (res.first) return true
             runOnUiThread {
-                Toast.makeText(this, "静默安装失败：" + res.second.take(80), Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "静默安装失败：" + res.second.take(60), Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
             AppLogger.e("installApk: Shizuku failed", e)
         }
-        // 失败时不再自动拉起系统安装器（用户明确不想看到那个页面），只保留上面的提示。
         return false
     }
 
@@ -1415,6 +1428,8 @@ private fun SettingsSheet(
     downloadPath: String,
     autoInstall: Boolean,
     onToggleAutoInstall: (Boolean) -> Unit,
+    installPageFallback: Boolean,
+    onToggleInstallPageFallback: (Boolean) -> Unit,
     onChangePath: () -> Unit,
     onDismiss: () -> Unit,
     onSave: () -> Unit,
@@ -1476,6 +1491,24 @@ private fun SettingsSheet(
                     }
                     Spacer(Modifier.width(12.dp))
                     DshSwitch(checked = autoInstall, onCheckedChange = onToggleAutoInstall)
+                }
+
+                Spacer(Modifier.height(14.dp))
+                DshDivider()
+                Spacer(Modifier.height(14.dp))
+
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("系统安装页兜底", style = type.rowTitle, color = colors.ink)
+                        Spacer(Modifier.height(5.dp))
+                        Text(
+                            "静默安装被系统拒绝时，用系统安装页装完并自动点确认",
+                            style = type.caption,
+                            color = colors.inkFaint,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    DshSwitch(checked = installPageFallback, onCheckedChange = onToggleInstallPageFallback)
                 }
 
                 Spacer(Modifier.height(20.dp))

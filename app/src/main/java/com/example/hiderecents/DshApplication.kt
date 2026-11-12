@@ -12,6 +12,9 @@ class DshApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         AppSession.install(this)
+        AppLogger.init(this)
+        SilentApkInstaller.appContext = this
+        AppLogger.i("DshApplication onCreate")
         Unit
     }
 }

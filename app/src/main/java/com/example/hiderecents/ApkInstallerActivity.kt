@@ -91,7 +91,6 @@ class ApkInstallerActivity : DshActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applyPredictiveBackPref()
 
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         val theme = AppTheme.fromPref(prefs.getString("ui_theme", null))
@@ -437,6 +436,7 @@ class ApkInstallerActivity : DshActivity() {
         // 与文件传输共用同一份静默安装逻辑（cp → pm install -r → 会话式安装）。
         val res = SilentApkInstaller.install(apkFile, taskHideService)
         AppLogger.i("ApkInstaller: result=" + res.first + " output=" + res.second.take(240))
+        // 系统安装会话兜底已收进 SilentApkInstaller.install（受偏好 install_page_fallback 控制）
         return res.first
     }
 

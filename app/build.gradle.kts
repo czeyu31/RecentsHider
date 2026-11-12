@@ -14,8 +14,8 @@ android {
         applicationId = "com.tools.systemtool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 436
-        versionName = "3.0.40"
+        versionCode = 461
+        versionName = "3.0.65"
     }
 
     buildTypes {
@@ -62,7 +62,7 @@ dependencies {
     // ---- Compose (UI 重写层) ----
     val composeBom = platform("androidx.compose:compose-bom:2023.08.00")
     implementation(composeBom)
-    implementation("androidx.activity:activity-compose:1.7.2")
+    implementation("androidx.activity:activity-compose:1.8.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-text")

@@ -78,7 +78,6 @@ class AdbActivity : DshActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applyPredictiveBackPref()
 
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         val theme = AppTheme.fromPref(prefs.getString("ui_theme", null))
@@ -97,10 +96,6 @@ class AdbActivity : DshActivity() {
                     onBack = { dshGoBack() },
                     onClear = { clearOutput() },
                     onExecute = { executeCommand() },
-                    onQuickCommand = { cmd ->
-                        command = cmd
-                        executeCommand()
-                    },
                 )
             }
         }

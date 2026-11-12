@@ -17,9 +17,7 @@ import android.os.Parcel
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
-import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
-import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -51,6 +49,7 @@ import com.example.hiderecents.ui.screens.AppDetailDialog
 import com.example.hiderecents.ui.screens.AppDetailInfo
 import com.example.hiderecents.ui.screens.AppFilter
 import com.example.hiderecents.ui.screens.AppManageScreen
+import com.example.hiderecents.ui.screens.AppManageSettingsDialog
 import com.example.hiderecents.ui.screens.ManagedApp
 import com.example.hiderecents.ui.theme.AppTheme
 import com.example.hiderecents.ui.theme.applyDshSystemBars
@@ -68,7 +67,7 @@ import java.io.File
  * - 长按操作面板：置顶 / 应用详情 / 提取 APK / 卸载（保留或删除数据）
  * - 应用详情：版本、版本号、targetSdk、minSdk、权限清单、系统设置入口
  */
-class AppManageActivity : AppCompatActivity() {
+class AppManageActivity : DshActivity() {
 
     companion object {
         private const val TAG = "AppManage"
@@ -90,6 +89,10 @@ class AppManageActivity : AppCompatActivity() {
     private var actionApp by mutableStateOf<ManagedApp?>(null)
     private var detailInfo by mutableStateOf<AppDetailInfo?>(null)
     private var pendingUninstall by mutableStateOf<ManagedApp?>(null)
+
+    /** 本页设置弹窗与其中的「恢复时回到前台」开关。 */
+    private var showSettings by mutableStateOf(false)
+    private var relaunchOnUnhide by mutableStateOf(true)
 
     private val iconCache = mutableMapOf<String, ImageBitmap>()
 
@@ -141,17 +144,6 @@ class AppManageActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applyPredictiveBackPref()
-        // 预测返回手势：返回统一交给 OnBackPressedDispatcher。
-        // 开启 enableOnBackInvokedCallback 后系统不再调用 onBackPressed()，必须走回调。
-        onBackPressedDispatcher.addCallback(
-            this,
-            object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    handleBackPressed()
-                }
-            },
-        )
 
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         hiddenApps.addAll(prefs.getStringSet("hidden_apps", emptySet()) ?: emptySet())
@@ -184,6 +176,7 @@ class AppManageActivity : AppCompatActivity() {
         if (allApps.isEmpty()) Log.d(TAG, "cache miss, loading")
 
         val theme = AppTheme.fromPref(prefs.getString("ui_theme", null))
+        relaunchOnUnhide = prefs.getBoolean("relaunch_on_unhide", true)
         applySystemBars(theme)
 
         setContent {
@@ -208,7 +201,24 @@ class AppManageActivity : AppCompatActivity() {
                     onRestoreAll = { restoreAll() },
                     shizukuReady = serviceReady,
                     onOpenShizuku = { openShizukuApp() },
+                    onOpenSettings = { showSettings = true },
                 )
+
+                if (showSettings) {
+                    AppManageSettingsDialog(
+                        relaunchOnUnhide = relaunchOnUnhide,
+                        onRelaunchOnUnhideChange = { value ->
+                            relaunchOnUnhide = value
+                            prefs.edit().putBoolean("relaunch_on_unhide", value).apply()
+                            Toast.makeText(
+                                this,
+                                if (value) "取消隐藏会回到前台" else "取消隐藏不再拉起应用",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                        onDismiss = { showSettings = false },
+                    )
+                }
 
                 actionApp?.let { app ->
                     AppActionSheet(
@@ -293,6 +303,10 @@ class AppManageActivity : AppCompatActivity() {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, R.anim.slide_right)
         finish()
+    }
+
+    override fun onDshBackPressed() {
+        handleBackPressed()
     }
 
     private fun handleBackPressed() {
@@ -485,9 +499,19 @@ class AppManageActivity : AppCompatActivity() {
     /** 磁盘缓存文件：冷启动先用它渲染，避免每次都等 Shizuku 枚举 + 建列表。 */
     private fun diskCacheFile(): File = File(filesDir, "app_list_cache_v1.txt")
 
+    /** 已安装包名列表的指纹：装了/卸了应用后指纹变化，磁盘缓存随即失效重建。 */
+    private fun installedSignature(): Int {
+        return runCatching {
+            packageManager.getInstalledPackages(0).map { it.packageName }.sorted().hashCode()
+        }.getOrDefault(0)
+    }
+
     private fun saveDiskCache(list: List<ManagedApp>) {
         runCatching {
             val sb = StringBuilder()
+            // 第一行存「已安装包名指纹」：之后装了/卸了应用，指纹对不上就丢弃缓存重建，
+            // 避免列表里缺新装的 App（之前必须手动删缓存文件才能看到新应用）。
+            sb.append("#sig=").append(installedSignature()).append(10.toChar())
             for (app in list) {
                 sb.append(app.packageName).append("|").append(app.appName).append(10.toChar())
             }
@@ -501,15 +525,21 @@ class AppManageActivity : AppCompatActivity() {
             if (!f.exists()) return emptyList()
             val pm = packageManager
             val list = ArrayList<ManagedApp>()
-            for (line in f.readLines()) {
+            val lines = f.readLines()
+            val sigLine = lines.firstOrNull().orEmpty()
+            val savedSig = sigLine.removePrefix("#sig=").toIntOrNull()
+            if (savedSig == null || savedSig != installedSignature()) {
+                Log.d(TAG, "disk cache stale (sig " + savedSig + " != " + installedSignature() + "), rebuild")
+                return emptyList()
+            }
+            for (line in lines.drop(1)) {
                 if (line.isBlank()) continue
                 val sep = line.indexOf("|")
                 if (sep <= 0) continue
                 val pkg = line.substring(0, sep)
                 val name = line.substring(sep + 1)
-                val isSystem = runCatching {
-                    (pm.getApplicationInfo(pkg, 0).flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                }.getOrDefault(false)
+                val info = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull() ?: continue
+                val isSystem = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
                 list.add(
                     ManagedApp(
                         packageName = pkg,

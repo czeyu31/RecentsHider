@@ -66,8 +66,6 @@ class MainActivity : AppCompatActivity() {
     private var appTheme by mutableStateOf(AppTheme.SYSTEM)
     private var showSettings by mutableStateOf(false)
     private var hideGuard by mutableStateOf(true)
-    private var relaunchOnUnhide by mutableStateOf(true)
-    private var predictiveBack by mutableStateOf(true)
     private var keepAliveBatteryOk by mutableStateOf(false)
     private var keepAliveAutoStartOk by mutableStateOf(false)
     private var keepAliveAutoStartUnknown by mutableStateOf(false)
@@ -112,7 +110,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applyPredictiveBackPref()
 
         AppLogger.init(this)
         AppLogger.i("MainActivity onCreate (compose)")
@@ -120,8 +117,6 @@ class MainActivity : AppCompatActivity() {
         prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         appTheme = AppTheme.fromPref(prefs.getString("ui_theme", null))
         hideGuard = prefs.getBoolean("hide_guard_enabled", true)
-        relaunchOnUnhide = prefs.getBoolean("relaunch_on_unhide", true)
-        predictiveBack = prefs.getBoolean("predictive_back_enabled", true)
         applySystemBars()
 
         setContent {
@@ -153,15 +148,11 @@ class MainActivity : AppCompatActivity() {
                         excludeFromRecents = homeState.excludeFromRecents,
                         hiddenCount = homeState.hiddenCount,
                         hideGuard = hideGuard,
-                            relaunchOnUnhide = relaunchOnUnhide,
-                            predictiveBack = predictiveBack,
                         onThemeChange = { setTheme(it) },
                         onToggleKeepAlive = { toggleKeepAlive(it) },
                         onToggleNotification = { toggleNotification(it) },
                         onToggleExclude = { toggleExcludeFromRecents(it) },
                         onHideGuardChange = { applyHideGuard(it) },
-                            onRelaunchOnUnhideChange = { applyRelaunchOnUnhide(it) },
-                            onPredictiveBackChange = { applyPredictiveBack(it) },
                         onDismiss = { showSettings = false },
                     )
                 }
@@ -206,19 +197,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------ 主题
-
-    private fun applyPredictiveBack(value: Boolean) {
-        prefs.edit().putBoolean("predictive_back_enabled", value).apply()
-        predictiveBack = value
-        applyPredictiveBackPref()
-        Toast.makeText(this, if (value) "已开启预测返回手势" else "已关闭预测返回手势", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun applyRelaunchOnUnhide(value: Boolean) {
-        prefs.edit().putBoolean("relaunch_on_unhide", value).apply()
-        relaunchOnUnhide = value
-        Toast.makeText(this, if (value) "取消隐藏会回到前台" else "取消隐藏不再拉起应用", Toast.LENGTH_SHORT).show()
-    }
 
     private fun applyHideGuard(value: Boolean) {
         prefs.edit().putBoolean("hide_guard_enabled", value).apply()
@@ -495,25 +473,9 @@ class MainActivity : AppCompatActivity() {
             }
             if (!serviceReady) return@Thread
 
-            val enabled = Settings.Secure.getString(
-                contentResolver,
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-            ) ?: ""
-            val myCn = "$packageName/${AccessibilityKeepAliveService::class.java.name}"
-            // 组件名可能是短形式或全形式，统一解析后比较，不要用字符串 contains
-            val listed = enabled.split(':')
-                .filter { it.isNotBlank() }
-                .mapNotNull { ComponentName.unflattenFromString(it.trim()) }
-                .any {
-                    it.packageName == packageName &&
-                        it.className == AccessibilityKeepAliveService::class.java.name
-                }
-            if (!listed) {
-                val newValue = if (enabled.isEmpty()) myCn else "$enabled:$myCn"
-                executeCommandSync("settings put secure enabled_accessibility_services $newValue")
-                executeCommandSync("settings put secure accessibility_enabled 1")
-                Log.d(TAG, "Re-enabled AccessibilityKeepAliveService")
-            }
+            ensureA11yServiceEnabled(AccessibilityKeepAliveService::class.java)
+            // 安装确认页自动点击：MIUI 对 shell 安装会插入确认页，需要这个无障碍服务
+            ensureA11yServiceEnabled(InstallConfirmService::class.java)
 
             val protectedServices = prefs.getStringSet("protected_a11y_services", emptySet()) ?: emptySet()
             val userDisabled = prefs.getStringSet("user_disabled_a11y", emptySet()) ?: emptySet()
@@ -536,6 +498,25 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }.start()
+    }
+
+    /** 把本应用的一个无障碍服务写进 enabled_accessibility_services（已启用则跳过） */
+    private fun ensureA11yServiceEnabled(cls: Class<*>) {
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+        ) ?: ""
+        // 组件名可能是短形式或全形式，统一解析后比较，不要用字符串 contains
+        val listed = enabled.split(':')
+            .filter { it.isNotBlank() }
+            .mapNotNull { ComponentName.unflattenFromString(it.trim()) }
+            .any { it.packageName == packageName && it.className == cls.name }
+        if (listed) return
+        val cn = "$packageName/" + cls.name
+        val newValue = if (enabled.isEmpty()) cn else "$enabled:$cn"
+        executeCommandSync("settings put secure enabled_accessibility_services $newValue")
+        executeCommandSync("settings put secure accessibility_enabled 1")
+        Log.d(TAG, "Re-enabled " + cls.simpleName)
     }
 
     // ------------------------------------------------------------------ 设置项
@@ -887,7 +868,6 @@ class MainActivity : AppCompatActivity() {
         // 从应用管理 / 工具箱返回时重读偏好：首页「已隐藏 N 个应用」等数字要跟着变，
         // 否则进程没重启时会一直显示 onCreate 时读到的旧值。
         hideGuard = prefs.getBoolean("hide_guard_enabled", true)
-        relaunchOnUnhide = prefs.getBoolean("relaunch_on_unhide", true)
         refreshState()
         HiddenGuardService.sync(this)
         applySystemBars()

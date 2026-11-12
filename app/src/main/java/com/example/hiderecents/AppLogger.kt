@@ -26,6 +26,11 @@ object AppLogger {
         try {
             logFile?.appendText("$entry\n")
         } catch (_: Exception) {}
+        // 同时镜像到 logcat：直接用 am start 拉起某个页面时 AppLogger 可能还没 init，靠这个也能看到
+        try {
+            android.util.Log.i("SystemTool", entry)
+        } catch (_: Throwable) {
+        }
     }
 
     fun d(msg: String) = log("DEBUG", msg)

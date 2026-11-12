@@ -285,15 +285,31 @@ class TaskHideService : Binder(), ITaskHideService {
     }
 
     override fun uninstallApp(packageName: String, deleteData: Boolean): Boolean {
+        if (packageName.isBlank()) return false
         Log.d(TAG, "Uninstalling " + packageName + ", deleteData=" + deleteData)
-        val command = if (deleteData) {
-            "pm uninstall " + packageName
-        } else {
-            "pm uninstall --user 0 " + packageName
+        // 「保留数据」只能用 -k（DELETE_KEEP_DATA）；
+        // --user 0 是「只对当前用户卸载」，用户数据照样会被清掉，不能拿来当保留数据用。
+        val keepFlag = if (deleteData) "" else "-k "
+        val primary = "pm uninstall " + keepFlag + packageName
+        var result = runShellCommand(primary)
+        Log.d(TAG, "uninstall cmd=" + primary + " -> code=" + result.first + " out=" + result.second.trim())
+        var ok = pmSucceeded(result.first, result.second)
+        if (!ok) {
+            // 系统应用、多用户场景整体卸载会失败，退化为「仅对当前用户卸载」
+            val fallback = "pm uninstall " + keepFlag + "--user 0 " + packageName
+            result = runShellCommand(fallback)
+            Log.d(TAG, "uninstall fallback=" + fallback + " -> code=" + result.first + " out=" + result.second.trim())
+            ok = pmSucceeded(result.first, result.second)
         }
-        val (success, output) = runShellCommand(command)
-        Log.d(TAG, "Uninstall result: success=" + success + ", output=" + output)
-        return success
+        return ok
+    }
+
+    /** pm 系列命令失败时退出码常常仍是 0，必须看输出里的 Failure。 */
+    private fun pmSucceeded(exitZero: Boolean, output: String): Boolean {
+        val text = output.trim()
+        if (!exitZero) return false
+        if (text.contains("Failure") || text.contains("Exception")) return false
+        return true
     }
 
     override fun execCommand(command: String): Pair<Boolean, String> {
