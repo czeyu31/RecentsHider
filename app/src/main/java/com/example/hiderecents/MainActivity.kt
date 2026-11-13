@@ -26,7 +26,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.core.app.NotificationCompat
 import androidx.core.view.WindowCompat
 import com.example.hiderecents.ft.FtOnline
 import com.example.hiderecents.ft.FtOnlineService
@@ -711,49 +710,10 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ 通知
 
-    private val notifChannelId = "system_tool_status"
-    private val notifId = 4001
-
     private fun updateStatusNotification() {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        if (!prefs.getBoolean("show_status_notification", false)) {
-            nm.cancel(notifId)
-            return
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = android.app.NotificationChannel(
-                notifChannelId,
-                "状态通知",
-                android.app.NotificationManager.IMPORTANCE_LOW,
-            )
-            channel.description = "显示隐藏和保活状态"
-            channel.setShowBadge(false)
-            nm.createNotificationChannel(channel)
-        }
-
-        val hiddenApps = prefs.getStringSet("hidden_apps", emptySet()) ?: emptySet()
-        val protectedServices = prefs.getStringSet("protected_a11y_services", emptySet()) ?: emptySet()
-        val userDisabled = prefs.getStringSet("user_disabled_a11y", emptySet()) ?: emptySet()
-        val activeProtected = protectedServices.count { it !in userDisabled }
-
-        val text = buildString {
-            append("已隐藏 ${hiddenApps.size} 个应用")
-            if (activeProtected > 0) append(" · 保活 $activeProtected 个无障碍服务")
-        }
-
-        val intent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-        val notification = NotificationCompat.Builder(this, notifChannelId)
-            .setContentTitle("System Tool")
-            .setContentText(text)
-            .setSmallIcon(R.drawable.ic_settings)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-
-        nm.notify(notifId, notification)
+        // 全应用只有这一条常驻通知（已隐藏几个应用 / 无障碍开着几个应用 / 是否在线），
+        // 内容与渠道都在 StatusCenter 里统一维护。
+        runCatching { StatusCenter.refresh(this) }
     }
 
     private fun applyExcludeFromRecents(exclude: Boolean) {

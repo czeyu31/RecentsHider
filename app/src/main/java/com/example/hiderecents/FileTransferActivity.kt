@@ -140,7 +140,7 @@ class FileTransferActivity : DshActivity() {
     private var totalTransferred by mutableStateOf("0 B")
 
     private var showSettings by mutableStateOf(false)
-    /** 「在线接收」：关掉本页后仍保持接收端在线，电脑随时能发文件过来。 */
+    /** 「在线接收」：关掉本页后仍保持接收端在线，其他设备随时能发文件过来。 */
     private var onlineReceive by mutableStateOf(false)
     /** 「系统安装页兜底」：静默安装失败时改用系统安装页，由用户手动点「继续安装」。 */
     private var installPageFallback by mutableStateOf(true)
@@ -552,7 +552,7 @@ class FileTransferActivity : DshActivity() {
                     runOnUiThread {
                         addTask(
                             file.name,
-                            from.ifEmpty { "电脑" },
+                            from.ifEmpty { "其他设备" },
                             false,
                             file.length(),
                             file.absolutePath,
@@ -715,14 +715,17 @@ class FileTransferActivity : DshActivity() {
                 val data = announce.toByteArray()
                 val group = java.net.InetAddress.getByName("255.255.255.255")
                 val packet = java.net.DatagramPacket(data, data.size, group, 53317)
-                for (attempt in 1..3) {
-                    socket.send(packet)
-                    Thread.sleep(200)
-                }
 
                 val buf = ByteArray(8192)
-                val endTime = System.currentTimeMillis() + 3000
+                val endTime = System.currentTimeMillis() + 4000
+                var nextAnnounce = 0L
                 while (System.currentTimeMillis() < endTime) {
+                    // 广播要反复发：对方可能刚从省电模式醒来，第一轮广播是收不到的
+                    val now = System.currentTimeMillis()
+                    if (now >= nextAnnounce) {
+                        runCatching { socket.send(packet) }
+                        nextAnnounce = now + 700
+                    }
                     try {
                         val recvPacket = java.net.DatagramPacket(buf, buf.size)
                         socket.receive(recvPacket)
@@ -735,11 +738,10 @@ class FileTransferActivity : DshActivity() {
                             val port = json.optInt("port", 53317)
                             val alias = json.optString("alias", "Device")
                             val model = json.optString("deviceModel", "")
-                            if (!discoveredDevices.containsKey(deviceIp)) {
-                                synchronized(discoveredDevices) {
-                                    discoveredDevices[deviceIp] = DeviceInfo(deviceIp, alias, port, model, "mobile")
-                                }
+                            synchronized(discoveredDevices) {
+                                discoveredDevices[deviceIp] = DeviceInfo(deviceIp, alias, port, model, "mobile")
                             }
+                            runOnUiThread { publishDevices() }
                         } catch (_: Exception) {
                         }
                     } catch (_: java.net.SocketTimeoutException) {
@@ -751,7 +753,7 @@ class FileTransferActivity : DshActivity() {
             }
 
             val subnet = ip.substringBeforeLast(".")
-            val ports = intArrayOf(serverPort, 53317, 8080)
+            val ports = intArrayOf(serverPort, 53318, 53317, 8080)
             val threads = (1..254).map { i ->
                 Thread {
                     try {
@@ -764,19 +766,24 @@ class FileTransferActivity : DshActivity() {
                                 socket.connect(java.net.InetSocketAddress(addr, port), 800)
                                 socket.close()
                                 try {
-                                    val conn = URL("http://$addr:$port/").openConnection() as HttpURLConnection
-                                    conn.connectTimeout = 1000
-                                    conn.readTimeout = 1000
+                                    // 用 /ping 认设备：既确认是 System Tool，又直接拿到设备名和真实端口
+                                    val conn = URL("http://$addr:$port/ping").openConnection() as HttpURLConnection
+                                    conn.connectTimeout = 800
+                                    conn.readTimeout = 800
                                     if (conn.responseCode == 200) {
                                         val body = conn.inputStream.bufferedReader().readText()
-                                        if (body.contains("System Tool") ||
-                                            body.contains("localsend") ||
-                                            body.contains("文件中转")
-                                        ) {
+                                        val json = runCatching { JSONObject(body) }.getOrNull()
+                                        if (json != null && json.optBoolean("online", false)) {
+                                            val realPort = json.optInt("port", port)
+                                            val model = json.optString("deviceModel", "")
+                                            val alias = json.optString("alias", "")
+                                                .ifEmpty { model }
+                                                .ifEmpty { "System Tool" }
                                             synchronized(discoveredDevices) {
                                                 discoveredDevices[addr] =
-                                                    DeviceInfo(addr, "设备 $addr", port, "", "mobile")
+                                                    DeviceInfo(addr, alias, realPort, model, "mobile")
                                             }
+                                            runOnUiThread { publishDevices() }
                                         }
                                     }
                                 } catch (_: Exception) {
@@ -1551,7 +1558,7 @@ private fun SettingsSheet(
                             if (onlineReceive) {
                                 "已开启 · 离开这一页也能收，收到文件会在屏幕上方弹通知"
                             } else {
-                                "打开后电脑随时能扫到这台手机并发文件，不用先打开这一页"
+                                "打开后其他设备随时能扫到这台手机并发文件，不用先打开这一页"
                             },
                             style = type.caption,
                             color = colors.inkFaint,

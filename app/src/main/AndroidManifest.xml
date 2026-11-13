@@ -34,6 +34,9 @@
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" />
+    <!-- 「在线接收」要用的网络锁：退到后台后 Wi-Fi 进省电模式会丢广播帧 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
         android:name=".DshApplication"
@@ -141,10 +144,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-
-        <service
-            android:name=".FileServerService"
-            android:exported="false" />
 
         <service
             android:name=".KeepAliveService"

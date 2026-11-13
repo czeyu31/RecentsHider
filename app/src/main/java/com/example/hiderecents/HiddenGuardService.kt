@@ -1,8 +1,5 @@
 package com.example.hiderecents
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.ComponentName
 import android.content.Context
@@ -10,15 +7,12 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.Parcel
 import android.os.PowerManager
 import android.util.Log
-import androidx.core.app.NotificationCompat
 
 /**
  * 隐藏守护服务。
@@ -35,8 +29,6 @@ class HiddenGuardService : Service() {
 
     companion object {
         private const val TAG = "HiddenGuard"
-        private const val CHANNEL_ID = "hidden_guard"
-        private const val NOTIFICATION_ID = 3020
         private const val INTERVAL = 10_000L
 
         /** 按当前 hidden_apps 决定启动或停止守护服务。 */
@@ -48,14 +40,14 @@ class HiddenGuardService : Service() {
             if (hidden.isEmpty() || !guard || !enabled) stopGuard(ctx) else startGuard(ctx)
         }
 
+        /**
+         * 普通后台服务，不再持有自己的常驻通知：
+         * 进程由「状态通知」那条前台服务（[KeepAliveService]）或无障碍服务撑着，
+         * 同一个进程里的普通服务跟着一起活。
+         */
         private fun startGuard(ctx: Context) {
             try {
-                val intent = Intent(ctx, HiddenGuardService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    ctx.startForegroundService(intent)
-                } else {
-                    ctx.startService(intent)
-                }
+                ctx.startService(Intent(ctx, HiddenGuardService::class.java))
             } catch (t: Throwable) {
                 Log.e(TAG, "start failed", t)
             }
@@ -103,13 +95,11 @@ class HiddenGuardService : Service() {
     override fun onCreate() {
         super.onCreate()
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
-        startForegroundIfNeeded()
         bindShizuku()
         handler.post(tick)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForegroundIfNeeded()
         return START_STICKY
     }
 
@@ -124,40 +114,6 @@ class HiddenGuardService : Service() {
         } catch (_: Exception) {
         }
         super.onDestroy()
-    }
-
-    private fun startForegroundIfNeeded() {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val nm = getSystemService(NotificationManager::class.java)
-                val channel = NotificationChannel(
-                    CHANNEL_ID, "隐藏守护", NotificationManager.IMPORTANCE_MIN,
-                ).apply {
-                    description = "让被隐藏的应用持续不出现在最近任务里"
-                    setShowBadge(false)
-                }
-                nm.createNotificationChannel(channel)
-            }
-            val open = PendingIntent.getActivity(
-                this, 0, Intent(this, MainActivity::class.java),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("隐藏守护运行中")
-                .setContentText("被隐藏的应用不会出现在最近任务")
-                .setSmallIcon(R.drawable.ic_settings)
-                .setOngoing(true)
-                .setPriority(NotificationCompat.PRIORITY_MIN)
-                .setContentIntent(open)
-                .build()
-            if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
-        } catch (t: Throwable) {
-            Log.e(TAG, "startForeground failed", t)
-        }
     }
 
     private fun bindShizuku() {

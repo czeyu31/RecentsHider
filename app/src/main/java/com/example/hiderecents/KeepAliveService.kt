@@ -1,9 +1,6 @@
 package com.example.hiderecents
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -13,7 +10,6 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
-import androidx.core.app.NotificationCompat
 
 /**
  * 应用本体的常驻前台服务。
@@ -22,15 +18,20 @@ import androidx.core.app.NotificationCompat
  * 和电池优化白名单，这些只是「允许你活」，并不提供实际载体。
  * 没有前台服务的进程在 MIUI 上照样会被冻结/回收，所以保活开关形同虚设。
  *
- * 现在由本服务提供常驻前台通知 + START_STICKY，被系统杀掉后会尝试重建。
+ * 它持的那条通知就是全应用唯一的「状态通知」（见 [StatusCenter]）：
+ * 隐藏了几个应用、无障碍给几个应用开着、文件传输是否在线都写在里面，
+ * 不再另外挂「后台保活」「无障碍保活守护」「隐藏守护」「文件传输在线」四条。
  */
 class KeepAliveService : Service() {
 
     companion object {
         private const val TAG = "KeepAlive"
-        private const val CHANNEL_ID = "app_keepalive"
-        private const val NOTIFICATION_ID = 3010
         private const val ACTION_STOP = "com.example.hiderecents.KEEPALIVE_STOP"
+
+        /** 服务是否在跑：在跑的时候状态通知归它所有，别处只更新不取消。 */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
 
         fun start(ctx: Context) {
             try {
@@ -56,25 +57,29 @@ class KeepAliveService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     /**
-     * 每 60 秒刷新一次无障碍启用数量。
-     * 常驻前台服务比无障碍服务活得久，所以由它来保证岛上的数字不落后。
+     * 每 20 秒把状态通知的内容刷新一遍（无障碍开着几个应用、是否在线都会变）。
+     * 常驻前台服务比无障碍服务活得久，由它保证通知里的数字不落后。
      */
     private val guardHandler = Handler(Looper.getMainLooper())
     private val guardCheck = object : Runnable {
         override fun run() {
-            Unit
-            guardHandler.postDelayed(this, 60_000L)
+            runCatching { StatusCenter.refresh(this@KeepAliveService) }
+            guardHandler.postDelayed(this, 20_000L)
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         startForegroundIfNeeded()
         guardHandler.post(guardCheck)
     }
 
     override fun onDestroy() {
+        isRunning = false
         guardHandler.removeCallbacksAndMessages(null)
+        // 服务停了：用户还想要状态通知就留一条（此时它不再是前台服务通知），否则撤掉
+        runCatching { StatusCenter.refresh(this) }
         super.onDestroy()
     }
 
@@ -89,43 +94,16 @@ class KeepAliveService : Service() {
 
     private fun startForegroundIfNeeded() {
         try {
-            val nm = getSystemService(NotificationManager::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    CHANNEL_ID,
-                    "后台保活",
-                    NotificationManager.IMPORTANCE_LOW,
-                ).apply {
-                    description = "保持应用在后台常驻，避免被系统回收"
-                    setShowBadge(false)
-                }
-                nm.createNotificationChannel(channel)
-            }
-
-            val openIntent = PendingIntent.getActivity(
-                this,
-                0,
-                Intent(this, MainActivity::class.java),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-
-            val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("System Tool 正在后台运行")
-                .setContentText("保活已开启 · 点按返回应用")
-                .setSmallIcon(R.drawable.ic_settings)
-                .setOngoing(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setContentIntent(openIntent)
-                .build()
-
+            StatusCenter.ensureChannel(this)
+            val notification = StatusCenter.build(this)
             if (Build.VERSION.SDK_INT >= 34) {
                 startForeground(
-                    NOTIFICATION_ID,
+                    StatusCenter.NOTIFICATION_ID,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
                 )
             } else {
-                startForeground(NOTIFICATION_ID, notification)
+                startForeground(StatusCenter.NOTIFICATION_ID, notification)
             }
         } catch (t: Throwable) {
             Log.e(TAG, "startForeground failed", t)

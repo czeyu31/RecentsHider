@@ -164,6 +164,8 @@ class ToolboxActivity : DshActivity() {
         }
         prefs.edit().putBoolean("keep_alive_enabled", value).apply()
         keepAlive = value
+        if (value) KeepAliveService.start(this) else KeepAliveService.stop(this)
+        StatusCenter.refresh(this)
         Toast.makeText(
             this,
             if (value) "已开启后台保活" else "已关闭后台保活",
@@ -174,6 +176,7 @@ class ToolboxActivity : DshActivity() {
     private fun applyStatusNotification(value: Boolean) {
         prefs.edit().putBoolean("show_status_notification", value).apply()
         statusNotification = value
+        StatusCenter.refresh(this)
         Toast.makeText(
             this,
             if (value) "已开启状态通知" else "已关闭状态通知",

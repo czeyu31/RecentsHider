@@ -38,7 +38,6 @@ object FtOnline {
 
     const val CHANNEL_ONLINE = "ft_online"
     const val CHANNEL_RECEIVE = "ft_receive"
-    const val ONLINE_NOTIF_ID = 4310
     private const val RECEIVE_NOTIF_BASE = 4400
 
     /** 文件传输页共享出去的文件：id -> 文件。在线时服务端也直接从这里取。 */
@@ -116,6 +115,7 @@ object FtOnline {
 
         server = started
         port = started.listeningPort
+        acquireLocks(app)
         startUdp(app)
         return port
     }
@@ -129,6 +129,44 @@ object FtOnline {
         udp = null
         runCatching { udpThread?.interrupt() }
         udpThread = null
+        releaseLocks()
+    }
+
+    // ------------------------------------------------------------------ Wi-Fi 锁
+
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
+    private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
+
+    /**
+     * 应用退到后台后，Wi-Fi 会进入省电模式，**广播包就直接被网卡丢掉**，
+     * 于是另一台设备扫不到这台手机（前台时又能扫到——之前就是这个不对称现象）。
+     * 常驻一把高性能 Wi-Fi 锁 + 组播锁，后台也照收广播。
+     */
+    private fun acquireLocks(context: Context) {
+        runCatching {
+            val wm = context.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                ?: return
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            } else {
+                @Suppress("DEPRECATION")
+                android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            }
+            val wifi = wifiLock ?: wm.createWifiLock(mode, "systemtool:ft-online").also { wifiLock = it }
+            if (!wifi.isHeld) wifi.acquire()
+            val mc = multicastLock ?: wm.createMulticastLock("systemtool:ft-online").also {
+                it.setReferenceCounted(false)
+                multicastLock = it
+            }
+            if (!mc.isHeld) mc.acquire()
+        }
+    }
+
+    private fun releaseLocks() {
+        runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
+        runCatching { multicastLock?.takeIf { it.isHeld }?.release() }
+        wifiLock = null
+        multicastLock = null
     }
 
     /** 自检：能连上自己就说明接收端还活着（accept 线程可能已经挂了但端口仍在 LISTEN）。 */
@@ -157,22 +195,36 @@ object FtOnline {
 
     // ------------------------------------------------------------------ UDP 发现
 
+    private fun bindUdpSocket(): DatagramSocket? = try {
+        val s = DatagramSocket(null)
+        s.reuseAddress = true
+        s.broadcast = true
+        s.bind(java.net.InetSocketAddress(UDP_PORT))
+        s
+    } catch (e: Exception) {
+        null
+    }
+
     private fun startUdp(context: Context) {
         if (udp != null) return
-        val socket = try {
-            DatagramSocket(UDP_PORT)
-        } catch (e: Exception) {
-            null
-        } ?: return
-        udp = socket
+        val bound = bindUdpSocket() ?: return
+        udp = bound
         udpThread = Thread {
             val buf = ByteArray(8192)
+            var socket: DatagramSocket? = bound
             while (!Thread.currentThread().isInterrupted) {
+                val cur = socket ?: return@Thread
                 val packet = DatagramPacket(buf, buf.size)
                 try {
-                    socket.receive(packet)
+                    cur.receive(packet)
                 } catch (e: Exception) {
-                    return@Thread
+                    if (Thread.currentThread().isInterrupted) return@Thread
+                    // 网卡切换、系统回收 socket 都会抛在这里：重建一个接着等，别让应答线程悄悄死掉
+                    runCatching { cur.close() }
+                    runCatching { Thread.sleep(500) }
+                    socket = bindUdpSocket()
+                    udp = socket
+                    continue
                 }
                 val msg = String(packet.data, 0, packet.length)
                 // 记住对方自报的名字，收到文件时就能说「来自 哪台设备」而不是 IP
@@ -194,7 +246,7 @@ object FtOnline {
                     put("online", true)
                 }.toString().toByteArray()
                 runCatching {
-                    socket.send(DatagramPacket(reply, reply.size, packet.address, packet.port))
+                    cur.send(DatagramPacket(reply, reply.size, packet.address, packet.port))
                 }
                 // 对方带过来的文件（老协议）这里不处理，只应答发现请求
                 if (msg.isNotEmpty()) Unit
@@ -216,19 +268,8 @@ object FtOnline {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val mgr = context.getSystemService(NotificationManager::class.java) ?: return
 
-        if (mgr.getNotificationChannel(CHANNEL_ONLINE) == null) {
-            val ch = NotificationChannel(
-                CHANNEL_ONLINE,
-                "文件传输在线",
-                NotificationManager.IMPORTANCE_MIN,
-            ).apply {
-                description = "在线接收开启时，让电脑端一直能扫到这台手机"
-                setShowBadge(false)
-                enableVibration(false)
-                setSound(null, null)
-            }
-            mgr.createNotificationChannel(ch)
-        }
+        // 「文件传输在线」那条常驻通知已经并进状态通知，老渠道清掉
+        runCatching { mgr.deleteNotificationChannel(CHANNEL_ONLINE) }
 
         if (mgr.getNotificationChannel(CHANNEL_RECEIVE) == null) {
             val ch = NotificationChannel(
@@ -236,42 +277,12 @@ object FtOnline {
                 "收到文件",
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "收到电脑发来的文件时在屏幕上方弹出提醒"
+                description = "收到其他设备发来的文件时在屏幕上方弹出提醒"
                 enableVibration(true)
                 enableLights(true)
             }
             mgr.createNotificationChannel(ch)
         }
-    }
-
-    fun onlineNotification(context: Context): android.app.Notification {
-        ensureChannels(context)
-        val open = PendingIntent.getActivity(
-            context,
-            10,
-            Intent(context, FileTransferActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val off = PendingIntent.getService(
-            context,
-            11,
-            Intent(context, FtOnlineService::class.java).setAction(FtOnlineService.ACTION_STOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        return NotificationCompat.Builder(context, CHANNEL_ONLINE)
-            .setSmallIcon(R.drawable.ic_ft_file)
-            .setContentTitle("文件传输在线")
-            .setContentText("电脑可以发送文件到这台手机 · 端口 $port")
-            .setContentIntent(open)
-            .addAction(0, "关闭", off)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setShowWhen(false)
-            .setSilent(true)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .build()
     }
 
     /** 收到文件：顶部弹出提醒，点开看文件；打不开就进文件传输页。 */
@@ -332,11 +343,10 @@ object FtOnline {
                 return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", page())
             }
             if (uri == "ping") {
-                return newFixedLengthResponse(
-                    Response.Status.OK,
-                    "application/json",
-                    "{\"online\":true,\"port\":$listeningPort}",
-                )
+                // 对方扫同网段时用这个认设备：既要能认出是 System Tool，也要拿到设备名
+                val body = "{\"online\":true,\"port\":$listeningPort,\"app\":\"System Tool\"," +
+                    "\"alias\":\"${Build.MODEL}\",\"deviceModel\":\"${Build.MODEL}\"}"
+                return newFixedLengthResponse(Response.Status.OK, "application/json", body)
             }
             if (uri.startsWith("f/")) {
                 val name = Uri.decode(uri.removePrefix("f/"))
@@ -439,7 +449,7 @@ object FtOnline {
             return """
                 <!doctype html><html lang="zh"><meta charset="utf-8">
                 <meta name="viewport" content="width=device-width,initial-scale=1">
-                <title>文件传输</title>
+                <title>System Tool · 文件传输</title>
                 <style>
                   body{background:#0F1214;color:#E9EDEC;font:15px/1.6 -apple-system,system-ui,sans-serif;margin:0;padding:28px}
                   h1{font-size:20px;margin:0 0 6px}
@@ -449,7 +459,7 @@ object FtOnline {
                   a{color:#8FB3A4;text-decoration:none}
                   span{color:#68716F;font-size:13px}
                 </style>
-                <h1>系统工具 · 文件传输</h1>
+                <h1>System Tool · 文件传输</h1>
                 <p>在线接收中，直接把文件 POST 到这个地址即可</p>
                 <ul>$rows</ul>
                 </html>

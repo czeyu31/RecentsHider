@@ -326,7 +326,7 @@ private fun ServerBlock(
         Spacer(Modifier.height(10.dp))
 
         Text(
-            text = "在电脑浏览器打开此地址即可收发文件",
+            text = "在其他设备的浏览器打开此地址即可收发文件",
             style = type.caption,
             color = colors.inkFaint,
         )

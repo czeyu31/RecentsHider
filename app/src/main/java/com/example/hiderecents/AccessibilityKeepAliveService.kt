@@ -2,8 +2,6 @@ package com.example.hiderecents
 
 import android.accessibilityservice.AccessibilityService
 import android.app.AlarmManager
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ComponentName
@@ -12,7 +10,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.SharedPreferences
-import android.content.pm.ServiceInfo
 import android.database.ContentObserver
 import android.os.Build
 import android.os.Handler
@@ -22,14 +19,11 @@ import android.os.Parcel
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
-import androidx.core.app.NotificationCompat
 
 class AccessibilityKeepAliveService : AccessibilityService() {
 
     companion object {
         private const val TAG = "A11yKeepAlive"
-        private const val CHANNEL_ID = "a11y_keepalive"
-        private const val NOTIFICATION_ID = 3001
         private const val ALARM_ACTION = "com.example.hiderecents.A11Y_CHECK_ALARM"
         private const val CHECK_INTERVAL = 10 * 60 * 1000L // 10 minutes
         var instance: AccessibilityKeepAliveService? = null
@@ -64,7 +58,6 @@ class AccessibilityKeepAliveService : AccessibilityService() {
         prefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         lastSettingValue = getEnabledServicesString()
 
-        startForegroundIfNeeded()
         bindShizuku()
         registerContentObserver()
         registerUnlockReceiver()
@@ -74,37 +67,6 @@ class AccessibilityKeepAliveService : AccessibilityService() {
         handler.postDelayed({ checkAndRestore() }, 500)
 
         Log.d(TAG, "AccessibilityKeepAliveService connected, monitoring active")
-    }
-
-    private fun startForegroundIfNeeded() {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val nm = getSystemService(NotificationManager::class.java)
-                val channel = NotificationChannel(
-                    CHANNEL_ID, "无障碍保活守护",
-                    NotificationManager.IMPORTANCE_LOW
-                ).apply {
-                    description = "保持无障碍防回收服务持续运行"
-                    setShowBadge(false)
-                }
-                nm.createNotificationChannel(channel)
-            }
-            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("无障碍保活守护运行中")
-                .setContentText("防回收功能正在保护你的无障碍服务")
-                .setSmallIcon(R.drawable.ic_settings)
-                .setOngoing(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .build()
-            if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
-            Log.d(TAG, "Foreground notification started")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start foreground", e)
-        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
