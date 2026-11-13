@@ -369,6 +369,11 @@ class AppManageActivity : DshActivity() {
 
     // ------------------------------------------------------------------ 加载
 
+    /** 隐藏/恢复必须有用户服务里的 IActivityTaskManager，newProcess 这条兜底通道覆盖不到 */
+    private fun notReadyMessage(): String {
+        return if (ShizukuShell.probe()) "当前 Shizuku 起不了后台服务，隐藏/恢复请换回官方 Shizuku"
+        else "Shizuku 未就绪"
+    }
     private fun loadInstalledApps() {
         if (loadInFlight) {
             Log.d(TAG, "load skipped, in flight")
@@ -378,42 +383,29 @@ class AppManageActivity : DshActivity() {
         loading = true
         Thread {
             try {
-                val binder = TaskHideBridge.resolve(taskHideService)
-                if (binder == null) {
-                    runOnUiThread { loadInstalledAppsLocal() }
-                    return@Thread
-                }
-                val data = Parcel.obtain()
-                val reply = Parcel.obtain()
-                try {
-                    data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
-                    data.writeString("pm list packages")
-                    binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
-                    reply.readException()
-                    val success = reply.readInt() != 0
-                    val output = reply.readString() ?: ""
-                    Log.d(TAG, "pm list success=$success lines=${output.lines().size}")
-                    if (success && output.isNotBlank()) {
-                        val pm = packageManager
-                        val names = output.lines()
-                            .map { it.removePrefix("package:").trim() }
-                            .filter { it.isNotEmpty() }
-                        val list = names.mapNotNull { pkg -> toManagedApp(pm, pkg) }
-                        val sorted = sortAppsInitial(list)
-                        runOnUiThread {
-                            allApps = sorted
-                            loading = false
-                            AppListCache.put(sorted)
-                            saveDiskCache(sorted)
-                            Log.d(TAG, "list loaded n=" + sorted.size)
-                            startIconFill()
-                        }
-                    } else {
-                        runOnUiThread { loadInstalledAppsLocal() }
+                // 用户服务就绪时走原路径；Shizuku NEXT 这类分支起不来用户服务，
+                // ShizukuShell 会退回服务端 newProcess，应用列表照样能拉全。
+                val res = ShizukuShell.exec(TaskHideBridge.resolve(taskHideService), "pm list packages")
+                val success = res.first
+                val output = res.second
+                Log.d(TAG, "pm list success=$success lines=${output.lines().size}")
+                if (success && output.isNotBlank()) {
+                    val pm = packageManager
+                    val names = output.lines()
+                        .map { it.removePrefix("package:").trim() }
+                        .filter { it.isNotEmpty() }
+                    val list = names.mapNotNull { pkg -> toManagedApp(pm, pkg) }
+                    val sorted = sortAppsInitial(list)
+                    runOnUiThread {
+                        allApps = sorted
+                        loading = false
+                        AppListCache.put(sorted)
+                        saveDiskCache(sorted)
+                        Log.d(TAG, "list loaded n=" + sorted.size)
+                        startIconFill()
                     }
-                } finally {
-                    data.recycle()
-                    reply.recycle()
+                } else {
+                    runOnUiThread { loadInstalledAppsLocal() }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load via Shizuku", e)
@@ -641,7 +633,7 @@ class AppManageActivity : DshActivity() {
 
     private fun toggleAppVisibility(packageName: String, hide: Boolean) {
         if (!shizukuPermissionGranted || !serviceReady) {
-            Toast.makeText(this, "Shizuku 未就绪", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, notReadyMessage(), Toast.LENGTH_SHORT).show()
             return
         }
         Thread {
@@ -702,26 +694,12 @@ class AppManageActivity : DshActivity() {
         // 改走 Shizuku 的 shell 通道执行 monkey，等同 adb shell 拉起，不触发该弹窗；
         // Shizuku 不可用时才回落到 startActivity。
         Thread {
-            val binder = TaskHideBridge.resolve(taskHideService)
-            if (binder != null) {
-                val data = Parcel.obtain()
-                val reply = Parcel.obtain()
-                try {
-                    data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
-                    data.writeString(
-                        "monkey -p " + packageName + " -c android.intent.category.LAUNCHER 1",
-                    )
-                    binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
-                    reply.readException()
-                    val ok = reply.readInt() != 0
-                    if (ok) return@Thread
-                } catch (e: Exception) {
-                    Log.w(TAG, "relaunch via shizuku failed: " + e.message)
-                } finally {
-                    data.recycle()
-                    reply.recycle()
-                }
-            }
+            val res = ShizukuShell.exec(
+                TaskHideBridge.resolve(taskHideService),
+                "monkey -p " + packageName + " -c android.intent.category.LAUNCHER 1",
+            )
+            if (res.first) return@Thread
+            Log.w(TAG, "relaunch via shizuku failed: " + res.second.take(120))
             runOnUiThread {
                 runCatching {
                     val intent = packageManager.getLaunchIntentForPackage(packageName)
@@ -734,7 +712,7 @@ class AppManageActivity : DshActivity() {
     }
     private fun restoreAll() {
         if (!shizukuPermissionGranted || !serviceReady) {
-            Toast.makeText(this, "Shizuku 未就绪", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, notReadyMessage(), Toast.LENGTH_SHORT).show()
             return
         }
         val targets = hiddenApps.toList()
@@ -848,7 +826,7 @@ class AppManageActivity : DshActivity() {
 
     private fun uninstallApp(packageName: String, deleteData: Boolean) {
         if (!shizukuPermissionGranted || !serviceReady) {
-            Toast.makeText(this, "Shizuku 未就绪", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, notReadyMessage(), Toast.LENGTH_SHORT).show()
             return
         }
         Thread {

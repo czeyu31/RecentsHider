@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.os.IBinder
-import android.os.Parcel
 import java.io.File
 
 /**
@@ -24,7 +23,7 @@ object SilentApkInstaller {
     @Volatile
     var appContext: Context? = null
 
-    /** 偏好：shell 静默安装失败时，是否交给系统安装页（InstallConfirmService 自动点确认） */
+    /** 偏好：shell 静默安装失败时，是否交给系统安装页（安装页由用户手动确认） */
     fun pageFallbackEnabled(): Boolean {
         val ctx = appContext ?: return true
         return ctx.getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
@@ -36,7 +35,7 @@ object SilentApkInstaller {
      *
      * shell 安装在这台 MIUI 上必然被 PackageManagerServiceImpl.verifyInstallFromShell 秒取消
      * （AdbInstallActivity 87ms 内自杀），所以失败后改走系统安装会话：这条路弹的是正常的
-     * 「继续安装」页，由 InstallConfirmService 自动点掉。
+     * 「继续安装」页，需要用户手动点确认。
      *
      * 返回值 true 只代表「会话已提交」，最终结果由 ApkInstallReceiver 回调。
      */
@@ -82,31 +81,19 @@ object SilentApkInstaller {
     }
 
     private fun installShell(apkFile: File, ownBinder: IBinder?): Pair<Boolean, String> {
-        val binder = TaskHideBridge.resolve(ownBinder)
-            ?: return Pair(false, "Shizuku 未就绪")
         if (!apkFile.exists()) {
             return Pair(false, "文件不存在: " + apkFile.absolutePath)
         }
+        // 用户服务 binder 优先；连不上（例如 Shizuku NEXT 起不来用户服务）时
+        // ShizukuShell 会自动改走服务端 newProcess，静默安装照样能跑。
+        val binder = TaskHideBridge.resolve(ownBinder)
 
         fun exec(cmd: String): Pair<Boolean, String> {
-            val data = Parcel.obtain()
-            val reply = Parcel.obtain()
-            return try {
-                data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
-                data.writeString(cmd)
-                binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
-                reply.readException()
-                val ok = reply.readInt() != 0
-                val res = reply.readString() ?: ""
-                AppLogger.i("SilentInstall: " + cmd.take(110) + " => ok=" + ok + " out=" + res.take(200))
-                Pair(ok, res)
-            } catch (t: Throwable) {
-                AppLogger.e("SilentInstall failed: " + cmd.take(110) + " :: " + (t.message ?: ""))
-                Pair(false, t.message ?: "")
-            } finally {
-                data.recycle()
-                reply.recycle()
-            }
+            val res = ShizukuShell.exec(binder, cmd)
+            AppLogger.i(
+                "SilentInstall: " + cmd.take(110) + " => ok=" + res.first + " out=" + res.second.take(200)
+            )
+            return res
         }
 
         val size = apkFile.length()
@@ -146,7 +133,7 @@ object SilentApkInstaller {
 
     /**
      * 统一入口：先试 shell 静默安装；失败且偏好 install_page_fallback=true 时，
-     * 再交给系统安装会话（会显示安装页，由 InstallConfirmService 自动点掉）。
+     * 再交给系统安装会话（会显示安装页，由用户手动确认）。
      * 关闭该偏好 = 纯静默（失败只报错，不弹任何页面），与 3.0.45 之前行为一致。
      */
     fun install(apkFile: File, ownBinder: IBinder?): Pair<Boolean, String> {

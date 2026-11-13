@@ -91,6 +91,7 @@ class ToolboxActivity : DshActivity() {
     }
 
     private fun buildTools(): List<ToolboxTool> = listOf(
+
         ToolboxTool(
             title = "应用管理",
             desc = "从最近任务中隐藏或恢复，长按查看更多",
@@ -125,6 +126,15 @@ class ToolboxActivity : DshActivity() {
             meta = "局域网",
             icon = DshIconKind.TRANSFER,
             onClick = { open(FileTransferActivity::class.java) },
+        ),
+        // 心率广播排在末尾：工具箱首项独占整行，末项独占整行，中间两列成对
+        // 这样「应用管理」和「文件传输」都还在原来的位置
+        ToolboxTool(
+            title = "心率广播",
+            desc = "接收手环、手表的实时心率，按需录制并查看曲线",
+            meta = "BLE · 本机保存",
+            icon = DshIconKind.HEART,
+            onClick = { open(HeartRateActivity::class.java) },
         ),
 
     )
@@ -213,6 +223,16 @@ class ToolboxActivity : DshActivity() {
 
     override fun onDshBackPressed() {
         handleBackPressed()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 在别处（首页 / 子页面）改过外观时，回到工具箱也要跟着换
+        val prefTheme = AppTheme.fromPref(prefs.getString("ui_theme", null))
+        if (prefTheme != appTheme) {
+            appTheme = prefTheme
+            applyDshSystemBars(prefTheme)
+        }
     }
 
     private fun handleBackPressed() {

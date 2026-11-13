@@ -394,7 +394,7 @@ class ApkDetailActivity : DshActivity() {
         tmpFile.delete()
 
         // shell 安装在这台 MIUI 上会被 verifyInstallFromShell 秒取消，兜底交给系统安装会话，
-        // 由 InstallConfirmService 自动点掉「继续安装」；偏好 install_page_fallback=false 时纯静默。
+        // 安装页由用户手动确认；偏好 install_page_fallback=false 时纯静默。
         if (!SilentApkInstaller.pageFallbackEnabled()) {
             AppLogger.i("ApkDetail: page fallback off, shell only")
             return false

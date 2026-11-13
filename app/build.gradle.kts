@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
@@ -14,8 +14,8 @@ android {
         applicationId = "com.tools.systemtool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 462
-        versionName = "3.0.66"
+        versionCode = 481
+        versionName = "3.2.8"
     }
 
     buildTypes {
@@ -58,6 +58,8 @@ dependencies {
 
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+    // 服务端 AIDL（IShizukuService/IRemoteProcess）：用户服务连不上时用 newProcess 兜底执行命令
+    implementation("dev.rikka.shizuku:aidl:13.1.5")
 
     // ---- Compose (UI 重写层) ----
     val composeBom = platform("androidx.compose:compose-bom:2023.08.00")

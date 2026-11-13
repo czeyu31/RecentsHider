@@ -644,22 +644,9 @@ private fun loadIconBitmap(pm: PackageManager, pkg: String): androidx.compose.ui
     // ------------------------------------------------------------------ 命令通道
 
     private fun executeCommandSync(command: String): Boolean {
-        val binder = TaskHideBridge.resolve(taskHideService) ?: return false
-        val data = Parcel.obtain()
-        val reply = Parcel.obtain()
-        try {
-            data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
-            data.writeString(command)
-            binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
-            reply.readException()
-            return reply.readInt() != 0
-        } catch (e: Exception) {
-            Log.e(TAG, "Command failed: $command", e)
-            return false
-        } finally {
-            data.recycle()
-            reply.recycle()
-        }
+        val res = ShizukuShell.exec(TaskHideBridge.resolve(taskHideService), command)
+        if (!res.first) Log.w(TAG, "Command failed: " + command)
+        return res.first
     }
 
     // ------------------------------------------------------------------ 右滑返回

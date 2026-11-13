@@ -28,6 +28,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.app.NotificationCompat
 import androidx.core.view.WindowCompat
+import com.example.hiderecents.ft.FtOnline
+import com.example.hiderecents.ft.FtOnlineService
 import com.example.hiderecents.ui.screens.HiddenPreview
 import com.example.hiderecents.ui.screens.HomeScreen
 import com.example.hiderecents.ui.screens.HomeUiState
@@ -60,6 +62,8 @@ class MainActivity : AppCompatActivity() {
     private var shizukuPermissionGranted = false
     private var taskHideService: IBinder? = null
     private var serviceReady = false
+    // 用户服务连不上、但服务端 newProcess 通道可用：Shizuku NEXT 这类分支的典型状态
+    private var shellFallback by mutableStateOf(false)
     private var pendingEnableNotification = false
 
     private var homeState by mutableStateOf(HomeUiState())
@@ -118,6 +122,9 @@ class MainActivity : AppCompatActivity() {
         appTheme = AppTheme.fromPref(prefs.getString("ui_theme", null))
         hideGuard = prefs.getBoolean("hide_guard_enabled", true)
         applySystemBars()
+
+        // 上次开着「在线接收」的话，开机进来就把接收端捞起来
+        if (FtOnline.isOn(this)) FtOnlineService.start(this)
 
         setContent {
             DshTheme(theme = appTheme) {
@@ -255,6 +262,11 @@ class MainActivity : AppCompatActivity() {
             !shizukuPermissionGranted -> {
                 statusText = "未授权"
                 statusDetail = "Shizuku 正在运行，本应用还没有获得授权"
+            }
+
+            !serviceReady && shellFallback -> {
+                statusText = "兼容模式"
+                statusDetail = "当前 Shizuku 起不了后台服务，命令类功能可用；隐藏/恢复请换回官方 Shizuku"
             }
 
             !serviceReady -> {
@@ -474,8 +486,6 @@ class MainActivity : AppCompatActivity() {
             if (!serviceReady) return@Thread
 
             ensureA11yServiceEnabled(AccessibilityKeepAliveService::class.java)
-            // 安装确认页自动点击：MIUI 对 shell 安装会插入确认页，需要这个无障碍服务
-            ensureA11yServiceEnabled(InstallConfirmService::class.java)
 
             val protectedServices = prefs.getStringSet("protected_a11y_services", emptySet()) ?: emptySet()
             val userDisabled = prefs.getStringSet("user_disabled_a11y", emptySet()) ?: emptySet()
@@ -800,25 +810,9 @@ class MainActivity : AppCompatActivity() {
     // ------------------------------------------------------------------ 命令通道
 
     private fun executeCommandSync(command: String): String {
-        val binder = TaskHideBridge.resolve(taskHideService) ?: return ""
-        val data = Parcel.obtain()
-        val reply = Parcel.obtain()
-        try {
-            data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
-            data.writeString(command)
-            binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
-            reply.readException()
-            val success = reply.readInt() != 0
-            val output = reply.readString() ?: ""
-            Log.d(TAG, "Command '$command' => success=$success output=${output.take(200)}")
-            return output
-        } catch (e: Exception) {
-            Log.e(TAG, "Command failed: $command", e)
-            return ""
-        } finally {
-            data.recycle()
-            reply.recycle()
-        }
+        val res = ShizukuShell.exec(TaskHideBridge.resolve(taskHideService), command)
+        Log.d(TAG, "Command '$command' => success=" + res.first + " output=" + res.second.take(200))
+        return res.second
     }
 
     // ------------------------------------------------------------------ 电池温度
@@ -868,6 +862,11 @@ class MainActivity : AppCompatActivity() {
         // 从应用管理 / 工具箱返回时重读偏好：首页「已隐藏 N 个应用」等数字要跟着变，
         // 否则进程没重启时会一直显示 onCreate 时读到的旧值。
         hideGuard = prefs.getBoolean("hide_guard_enabled", true)
+        // 工具箱里也能改外观：回到首页要跟着换，否则会一直停在 onCreate 时读到的旧主题
+        val prefTheme = AppTheme.fromPref(prefs.getString("ui_theme", null))
+        if (prefTheme != appTheme) {
+            appTheme = prefTheme
+        }
         refreshState()
         HiddenGuardService.sync(this)
         applySystemBars()
@@ -875,6 +874,29 @@ class MainActivity : AppCompatActivity() {
         updateStatusNotification()
         handler.removeCallbacks(uptimeTicker)
         handler.postDelayed(uptimeTicker, 60_000L)
+        probeShellFallback()
+    }
+
+    /**
+     * 用户服务连不上时探测 newProcess 通道：能用就把首页状态从「连接中」改成「兼容模式」，
+     * 免得一直卡在连接中让人以为坏了。官方 Shizuku 上 serviceReady 通常早已为 true，直接跳过。
+     */
+    private fun probeShellFallback() {
+        if (serviceReady) {
+            if (shellFallback) shellFallback = false
+            return
+        }
+        Thread {
+            val ok = ShizukuShell.probe()
+            Log.d(TAG, "shell fallback probe=" + ok)
+            runOnUiThread {
+                if (serviceReady) return@runOnUiThread
+                if (shellFallback != ok) {
+                    shellFallback = ok
+                    refreshState()
+                }
+            }
+        }.start()
     }
 
     override fun onPause() {

@@ -19,5 +19,4 @@
     <string name="no_notifications">暂无通知记录</string>
     <string name="grant_notification_access">请授予通知访问权限以记录通知</string>
     <string name="keepalive_description">无障碍保活守护服务：监控并自动恢复被系统关闭的无障碍服务，不收集任何用户数据。</string>
-    <string name="install_confirm_description">安装确认自动点击服务：只在系统安装器界面出现时自动点击「继续安装」，用于让静默安装通过系统的确认步骤；不读取、不上传任何其他界面内容。</string>
 </resources>

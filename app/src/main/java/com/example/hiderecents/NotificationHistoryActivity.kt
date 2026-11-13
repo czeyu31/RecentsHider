@@ -176,22 +176,7 @@ class NotificationHistoryActivity : DshActivity() {
     }
 
     private fun executeCommandSync(command: String): String {
-        val binder = TaskHideBridge.resolve(taskHideService) ?: return ""
-        val data = Parcel.obtain()
-        val reply = Parcel.obtain()
-        try {
-            data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
-            data.writeString(command)
-            binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
-            reply.readException()
-            reply.readInt()
-            return reply.readString() ?: ""
-        } catch (_: Exception) {
-            return ""
-        } finally {
-            data.recycle()
-            reply.recycle()
-        }
+        return ShizukuShell.exec(TaskHideBridge.resolve(taskHideService), command).second
     }
 
     // ------------------------------------------------------------------ 权限

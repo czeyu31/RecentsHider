@@ -8,7 +8,7 @@ import android.widget.Toast
 
 /**
  * 系统安装会话的结果回调（见 SilentApkInstaller.installViaSystem）。
- * MIUI 的安装确认页由 InstallConfirmService 自动点掉，这里只负责汇报结果。
+ * 安装确认页由用户手动操作，这里只负责汇报结果。
  */
 class ApkInstallReceiver : BroadcastReceiver() {
 
@@ -29,7 +29,7 @@ class ApkInstallReceiver : BroadcastReceiver() {
             "ApkInstallReceiver: session=" + sessionId + " status=" + status +
                 " ok=" + ok + " apk=" + apkName + " msg=" + message.take(200)
         )
-        // 系统要求用户操作（安装页）时，把页面拉起来，由 InstallConfirmService 自动点「安装」
+        // 系统要求用户操作（安装页）时，把页面拉起来交给用户确认
         // MIUI 不走 AOSP 的 STATUS_PENDING_USER_ACTION，而是把 STATUS 塞成 -1，
         // 同时把 CONFIRM_INSTALL 意图放在 android.intent.extra.INTENT 里
         val innerIntent = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)

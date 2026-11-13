@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Parcel
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -44,6 +45,8 @@ class AdbActivity : DshActivity() {
 
     private var taskHideService: IBinder? = null
     private var serviceReady by mutableStateOf(false)
+    // 用户服务连不上、但服务端 newProcess 通道可用时的兼容模式（Shizuku NEXT 等分支）
+    private var shellMode by mutableStateOf(false)
 
     private var deviceModel by mutableStateOf("")
     private var deviceInfo by mutableStateOf("")
@@ -92,7 +95,7 @@ class AdbActivity : DshActivity() {
                     onCommandChange = { command = it },
                     output = output,
                     running = running,
-                    ready = serviceReady,
+                    ready = serviceReady || shellMode,
                     onBack = { dshGoBack() },
                     onClear = { clearOutput() },
                     onExecute = { executeCommand() },
@@ -104,6 +107,19 @@ class AdbActivity : DshActivity() {
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
         Shizuku.addBinderDeadListener(binderDeadListener)
         checkShizukuPermission()
+
+        // 用户服务可能永远连不上（例如 Shizuku NEXT 在 Android 15 上起服务即崩），
+        // 这时用服务端 newProcess 兜底：命令页照样可用，只是没有任务隐藏能力。
+        Thread {
+            val ok = ShizukuShell.probe()
+            Log.d("AdbActivity", "shell fallback probe=" + ok)
+            runOnUiThread {
+                if (ok && !serviceReady) {
+                    shellMode = true
+                    loadDeviceInfo()
+                }
+            }
+        }.start()
     }
 
     override fun onDestroy() {
@@ -167,7 +183,7 @@ class AdbActivity : DshActivity() {
         val cmd = command.trim()
         if (cmd.isEmpty()) return
 
-        if (!serviceReady) {
+        if (!serviceReady && !shellMode) {
             appendLine("Shizuku 未就绪，无法执行命令", AdbLineKind.OUTPUT)
             Toast.makeText(this, "Shizuku 未就绪", Toast.LENGTH_SHORT).show()
             return
@@ -202,21 +218,8 @@ class AdbActivity : DshActivity() {
     }
 
     private fun executeCommandSync(command: String): String {
-        val binder = TaskHideBridge.resolve(taskHideService) ?: return ""
-        val data = Parcel.obtain()
-        val reply = Parcel.obtain()
-        try {
-            data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
-            data.writeString(command)
-            binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
-            reply.readException()
-            reply.readInt()
-            return reply.readString() ?: ""
-        } catch (_: Exception) {
-            return ""
-        } finally {
-            data.recycle()
-            reply.recycle()
-        }
+        // 用户服务就绪时走原路径；Shizuku NEXT 这类分支用户服务起不来时，
+        // ShizukuShell 会自动改用服务端 newProcess，命令页仍然可用。
+        return ShizukuShell.exec(TaskHideBridge.resolve(taskHideService), command).second
     }
 }

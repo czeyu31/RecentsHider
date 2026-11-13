@@ -48,7 +48,7 @@ import com.example.hiderecents.ui.theme.rememberMotionEnabled
 /** 自绘图标集：统一 24x24 坐标系、1.5dp 描边、圆头端点。不使用 Material 图标库默认形状。 */
 enum class DshIconKind {
     GEAR, GRID, SHIELD, CHEVRON, SEARCH, TERMINAL, BELL, PACKAGE, TRANSFER, MENU, ARROW_LEFT, ARROW_RIGHT,
-    FILE, IMAGE, CLIPBOARD, FOLDER, BACK, SLIDERS
+    FILE, IMAGE, CLIPBOARD, FOLDER, BACK, SLIDERS, HEART
 }
 
 /** 画布背景：主题底色的纵向渐变（纸本是纸面提亮到纸影，石墨是冷石墨到更深的底）。 */
@@ -173,6 +173,18 @@ fun DshIcon(
         }
 
         when (kind) {
+            DshIconKind.HEART -> {
+                val p = Path().apply {
+                    moveTo(12f * u, 20.4f * u)
+                    cubicTo(4.4f * u, 15.2f * u, 3.2f * u, 10.6f * u, 5.7f * u, 7.7f * u)
+                    cubicTo(7.7f * u, 5.2f * u, 10.8f * u, 5.7f * u, 12f * u, 8.3f * u)
+                    cubicTo(13.2f * u, 5.7f * u, 16.3f * u, 5.2f * u, 18.3f * u, 7.7f * u)
+                    cubicTo(20.8f * u, 10.6f * u, 19.6f * u, 15.2f * u, 12f * u, 20.4f * u)
+                    close()
+                }
+                drawPath(p, tint, style = stroke)
+            }
+
             DshIconKind.SLIDERS -> {
                 line(4f, 7f, 20f, 7f)
                 drawCircle(color = tint, radius = 2f * u, center = Offset(9f * u, 7f * u), style = stroke)

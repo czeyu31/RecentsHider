@@ -59,6 +59,8 @@ import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.DshIcon
 import com.example.hiderecents.ui.components.DshIconKind
+import com.example.hiderecents.ft.FtOnline
+import com.example.hiderecents.ft.FtOnlineService
 import com.example.hiderecents.ui.components.DshSwitch
 import com.example.hiderecents.ui.components.dshClickable
 import com.example.hiderecents.ui.screens.FileServerState
@@ -138,7 +140,9 @@ class FileTransferActivity : DshActivity() {
     private var totalTransferred by mutableStateOf("0 B")
 
     private var showSettings by mutableStateOf(false)
-    /** 「系统安装页兜底」：静默安装失败时用系统安装页装完并自动点确认。 */
+    /** 「在线接收」：关掉本页后仍保持接收端在线，电脑随时能发文件过来。 */
+    private var onlineReceive by mutableStateOf(false)
+    /** 「系统安装页兜底」：静默安装失败时改用系统安装页，由用户手动点「继续安装」。 */
     private var installPageFallback by mutableStateOf(true)
     private var showTextDialog by mutableStateOf(false)
     private var showAppPicker by mutableStateOf(false)
@@ -224,6 +228,7 @@ class FileTransferActivity : DshActivity() {
         val themePrefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         val theme = AppTheme.fromPref(themePrefs.getString("ui_theme", null))
         installPageFallback = themePrefs.getBoolean("install_page_fallback", true)
+        onlineReceive = FtOnline.isOn(this)
         applySystemBars(theme)
 
         setContent {
@@ -248,6 +253,7 @@ class FileTransferActivity : DshActivity() {
                     onCopyUrl = { copyShareUrl() },
                     onRemoveSharedFile = { id ->
                         sharedFiles.remove(id)
+                        FtOnline.shared.remove(id)
                         publishShared()
                         if (sharedFiles.isEmpty()) shareUrl = null
                     },
@@ -266,6 +272,21 @@ class FileTransferActivity : DshActivity() {
                         autoInstall = autoInstallApk,
                         onToggleAutoInstall = { autoInstallApk = it },
                         installPageFallback = installPageFallback,
+                        onlineReceive = onlineReceive,
+                        onToggleOnlineReceive = { on ->
+                            onlineReceive = on
+                            FtOnline.setOn(this, on)
+                            if (on) {
+                                FtOnlineService.start(this)
+                                Toast.makeText(this, "在线接收已开启，离开这一页也能收文件", Toast.LENGTH_SHORT).show()
+                            } else {
+                                FtOnline.onReceived = null
+                                FtOnlineService.stop(this)
+                                FtOnline.stop()
+                                Toast.makeText(this, "在线接收已关闭", Toast.LENGTH_SHORT).show()
+                            }
+                            restartServer()
+                        },
                         onToggleInstallPageFallback = {
                             installPageFallback = it
                             themePrefs.edit().putBoolean("install_page_fallback", it).apply()
@@ -346,7 +367,11 @@ class FileTransferActivity : DshActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        httpServer?.stop()
+        // 在线接收交给服务托管，页面退出时不碰它
+        if (!onlineReceive) {
+            httpServer?.stop()
+            FtOnline.onReceived = null
+        }
         try {
             udpThread?.interrupt()
             udpListener?.close()
@@ -404,7 +429,7 @@ class FileTransferActivity : DshActivity() {
     private fun autoGrantMediaPermission() {
         Thread {
             try {
-                val binder = TaskHideBridge.resolve(taskHideService) ?: return@Thread
+                val binder = TaskHideBridge.resolve(taskHideService)
                 val cmds = listOf(
                     "appops set $packageName READ_MEDIA_IMAGES allow",
                     "appops set $packageName READ_MEDIA_VIDEO allow",
@@ -413,18 +438,7 @@ class FileTransferActivity : DshActivity() {
                     "appops set $packageName WRITE_EXTERNAL_STORAGE allow",
                 )
                 for (cmd in cmds) {
-                    val data = Parcel.obtain()
-                    val reply = Parcel.obtain()
-                    try {
-                        data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
-                        data.writeString(cmd)
-                        binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
-                        reply.readException()
-                        reply.readInt()
-                    } finally {
-                        data.recycle()
-                        reply.recycle()
-                    }
+                    ShizukuShell.exec(binder, cmd)
                 }
                 AppLogger.i("autoGrant: media permissions done")
             } catch (e: Exception) {
@@ -434,24 +448,9 @@ class FileTransferActivity : DshActivity() {
     }
 
     private fun execCommand(cmd: String): Pair<Boolean, String> {
-        // 本页自己 bind 的用户服务常常还没就绪，优先复用进程内已连好的那个。
-        val binder = TaskHideBridge.resolve(taskHideService) ?: TaskHideBridge.binder ?: return Pair(false, "")
-        val data = Parcel.obtain()
-        val reply = Parcel.obtain()
-        try {
-            data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
-            data.writeString(cmd)
-            binder.transact(ITaskHideService.TRANSACTION_execCommand, data, reply, 0)
-            reply.readException()
-            val ok = reply.readInt() != 0
-            val out = reply.readString() ?: ""
-            return Pair(ok, out)
-        } catch (e: Exception) {
-            return Pair(false, "")
-        } finally {
-            data.recycle()
-            reply.recycle()
-        }
+        // 本页自己 bind 的用户服务常常还没就绪，优先复用进程内已连好的那个；
+        // 都连不上时 ShizukuShell 会走服务端 newProcess。
+        return ShizukuShell.exec(TaskHideBridge.resolve(taskHideService), cmd)
     }
 
     // ------------------------------------------------------------------ 发布状态
@@ -460,7 +459,7 @@ class FileTransferActivity : DshActivity() {
         serverState = FileServerState(
             ip = getDeviceIpAddress(),
             port = serverPort,
-            running = httpServer?.wasStarted() == true,
+            running = if (onlineReceive) FtOnline.port > 0 else httpServer?.wasStarted() == true,
         )
     }
 
@@ -512,19 +511,61 @@ class FileTransferActivity : DshActivity() {
     }
 
     private fun publishDevices() {
-        devicesState = discoveredDevices.map { (key, device) ->
+        // 没有端口的条目根本收不了文件，不往列表里放
+        devicesState = discoveredDevices.mapNotNull { (key, device) ->
+            if (device.port <= 0) return@mapNotNull null
             NearbyDeviceItem(
                 key = key,
                 alias = device.alias,
-                endpoint = if (device.port > 0) device.ip + ":" + device.port else device.ip,
-                isBluetooth = device.deviceType == "bluetooth",
+                endpoint = device.ip + ":" + device.port,
+                isBluetooth = false,
             )
         }
     }
 
     // ------------------------------------------------------------------ 服务端
 
+    /** 切换「在线接收」后要换一套接收端，先把旧的收掉再起新的。 */
+    private fun restartServer() {
+        runCatching { httpServer?.stop() }
+        httpServer = null
+        runCatching {
+            udpThread?.interrupt()
+            udpListener?.close()
+        }
+        udpThread = null
+        udpListener = null
+        if (!onlineReceive) FtOnline.stop()
+        startServer()
+        publishServer()
+        publishShared()
+    }
+
     private fun startServer() {
+        // 在线接收打开时，接收端由前台服务托管（关掉本页也还在），本页不再自己占端口
+        if (onlineReceive) {
+            val p = FtOnline.start(this)
+            if (p > 0) {
+                serverPort = p
+                httpServer = null
+                FtOnline.onReceived = { file, from ->
+                    runOnUiThread {
+                        addTask(
+                            file.name,
+                            from.ifEmpty { "电脑" },
+                            false,
+                            file.length(),
+                            file.absolutePath,
+                        )
+                    }
+                }
+                AppLogger.i("Online receive server on port $p")
+                publishServer()
+                return
+            }
+            AppLogger.e("Online receive server failed, falling back to local server")
+        }
+
         try {
             val socket = java.net.ServerSocket(0)
             serverPort = socket.localPort
@@ -642,26 +683,9 @@ class FileTransferActivity : DshActivity() {
         discoveredDevices.clear()
         publishDevices()
 
-        try {
-            val btAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
-            if (btAdapter != null && btAdapter.isEnabled) {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                    checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) ==
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    for (device in btAdapter.bondedDevices) {
-                        val name = device.name ?: "Bluetooth Device"
-                        val address = device.address
-                        if (!discoveredDevices.containsKey(address)) {
-                            discoveredDevices[address] = DeviceInfo(address, name, 0, "bluetooth", "bluetooth")
-                        }
-                    }
-                    runOnUiThread { publishDevices() }
-                }
-            }
-        } catch (e: Exception) {
-            AppLogger.e("Bluetooth discovery failed", e)
-        }
+        // 这里只认「能在局域网上收文件」的设备：先 UDP 广播，再扫同网段。
+        // 以前顺手把系统已配对的蓝牙设备也塞进这个列表，手环、桌搭这些根本收不了文件，
+        // 看起来就像心率广播扫描波及到了文件传输，已经去掉。
 
         Thread {
             val ip = getDeviceIpAddress()
@@ -923,6 +947,7 @@ class FileTransferActivity : DshActivity() {
     private fun addSharedFile(file: File) {
         val fileId = UUID.randomUUID().toString().take(8)
         sharedFiles[fileId] = file
+        FtOnline.shared[fileId] = file
         addTask(file.name, "分享文件", true, file.length())
         showShareLink(fileId)
     }
@@ -1014,6 +1039,7 @@ class FileTransferActivity : DshActivity() {
                                 }
                                 val fileId = UUID.randomUUID().toString().take(8)
                                 sharedFiles[fileId] = cacheFile
+                                FtOnline.shared[fileId] = cacheFile
                                 count++
                             } catch (_: Exception) {
                             }
@@ -1430,6 +1456,8 @@ private fun SettingsSheet(
     onToggleAutoInstall: (Boolean) -> Unit,
     installPageFallback: Boolean,
     onToggleInstallPageFallback: (Boolean) -> Unit,
+    onlineReceive: Boolean,
+    onToggleOnlineReceive: (Boolean) -> Unit,
     onChangePath: () -> Unit,
     onDismiss: () -> Unit,
     onSave: () -> Unit,
@@ -1502,13 +1530,35 @@ private fun SettingsSheet(
                         Text("系统安装页兜底", style = type.rowTitle, color = colors.ink)
                         Spacer(Modifier.height(5.dp))
                         Text(
-                            "静默安装被系统拒绝时，用系统安装页装完并自动点确认",
+                            "静默安装被系统拒绝时，改用系统安装页继续安装（需要你手动点确认）",
                             style = type.caption,
                             color = colors.inkFaint,
                         )
                     }
                     Spacer(Modifier.width(12.dp))
                     DshSwitch(checked = installPageFallback, onCheckedChange = onToggleInstallPageFallback)
+                }
+
+                Spacer(Modifier.height(14.dp))
+                DshDivider()
+                Spacer(Modifier.height(14.dp))
+
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("在线接收", style = type.rowTitle, color = colors.ink)
+                        Spacer(Modifier.height(5.dp))
+                        Text(
+                            if (onlineReceive) {
+                                "已开启 · 离开这一页也能收，收到文件会在屏幕上方弹通知"
+                            } else {
+                                "打开后电脑随时能扫到这台手机并发文件，不用先打开这一页"
+                            },
+                            style = type.caption,
+                            color = colors.inkFaint,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    DshSwitch(checked = onlineReceive, onCheckedChange = onToggleOnlineReceive)
                 }
 
                 Spacer(Modifier.height(20.dp))
