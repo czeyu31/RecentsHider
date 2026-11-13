@@ -3,6 +3,7 @@ package com.example.hiderecents
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.compose.setContent
@@ -47,6 +48,23 @@ import com.example.hiderecents.ui.theme.DshTheme
  */
 class SplashActivity : AppCompatActivity() {
 
+    private companion object {
+        /**
+         * 温启动时可以安全恢复的页面：这些页面用空 Intent 启动也能正常显示。
+         * 其余页面（ApkDetail / FilePicker 等需要参数的页面）一律回到首页。
+         */
+        val SAFE_WARM_TARGETS = setOf(
+            MainActivity::class.java.name,
+            ToolboxActivity::class.java.name,
+            AppManageActivity::class.java.name,
+            AccessibilityManageActivity::class.java.name,
+            AdbActivity::class.java.name,
+            NotificationHistoryActivity::class.java.name,
+            FileTransferActivity::class.java.name,
+            ApkInstallerActivity::class.java.name,
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -62,7 +80,13 @@ class SplashActivity : AppCompatActivity() {
 
         // 情况二：进程还活着（例如保活服务把进程留着），但任务栈被系统清掉了。
         // 这时任务里没有可露出的页面，直接回到上次停留的页面，同样不播开屏。
-        val warmTarget = AppSession.lastActivityName()
+        //
+        // 注意：只有「不带参数也能正常显示」的页面才能直接恢复。
+        // 像 ApkDetailActivity / FilePickerActivity 这类页面必须靠 Intent 带文件或模式，
+        // 用空 Intent 拉起来会立刻弹「无文件信息」然后 finish，表现成「点图标打不开」。
+        val last = AppSession.lastActivityName()
+        val warmTarget = last?.takeIf { it in SAFE_WARM_TARGETS }
+        Log.d("Splash", "warm last=" + last + " target=" + warmTarget)
         if (warmTarget != null && warmTarget != SplashActivity::class.java.name) {
             runCatching { startActivity(Intent().setClassName(this, warmTarget)) }
             finish()
