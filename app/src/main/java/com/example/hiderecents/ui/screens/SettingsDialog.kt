@@ -269,16 +269,20 @@ fun KeepAliveGuideDialog(
     autoStartOk: Boolean,
     autoStartUnknown: Boolean,
     manualAutoStart: Boolean,
+    powerPolicyNeeded: Boolean,
+    powerPolicyOk: Boolean,
     onOpenBatterySettings: () -> Unit,
     onOpenAutoStartSettings: () -> Unit,
     onManualAutoStartChange: (Boolean) -> Unit,
+    onOpenPowerPolicySettings: () -> Unit,
+    onManualPowerPolicyChange: (Boolean) -> Unit,
     onRecheck: () -> Unit,
     onFinish: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val colors = Dsh.colors
     val type = Dsh.type
-    val allOk = batteryOk && autoStartOk
+    val allOk = batteryOk && autoStartOk && (!powerPolicyNeeded || powerPolicyOk)
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -305,7 +309,7 @@ fun KeepAliveGuideDialog(
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = if (allOk) "两项设置都已就绪，点「完成」即可开启保活" else "请先把下面两项都设置好，保活开关才会真正打开",
+                    text = if (allOk) "设置都已就绪，点「完成」即可开启保活" else "请先把下面几项都设置好，保活开关才会真正打开",
                     style = type.caption,
                     color = colors.inkFaint,
                 )
@@ -324,6 +328,30 @@ fun KeepAliveGuideDialog(
                     ok = autoStartOk,
                     onOpen = onOpenAutoStartSettings,
                 )
+
+                if (powerPolicyNeeded) {
+                    Spacer(Modifier.height(12.dp))
+                    KeepAliveGuideRow(
+                        title = "省电策略",
+                        desc = "系统把它设成了「智能限制后台运行」，会连同后台联网一起掐掉",
+                        ok = powerPolicyOk,
+                        onOpen = onOpenPowerPolicySettings,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("我已把省电策略设为「无限制」", style = type.rowTitle, color = colors.ink)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "应用信息 → 省电策略 → 无限制；设完请重启一次本应用",
+                                style = type.caption,
+                                color = colors.inkFaint,
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        DshSwitch(checked = powerPolicyOk, onCheckedChange = onManualPowerPolicyChange)
+                    }
+                }
 
                 if (autoStartUnknown) {
                     Spacer(Modifier.height(12.dp))

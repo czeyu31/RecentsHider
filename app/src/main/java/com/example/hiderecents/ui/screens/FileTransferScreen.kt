@@ -126,6 +126,8 @@ fun FileTransferScreen(
     onSendToDevice: (NearbyDeviceItem) -> Unit,
     onOpenTaskFile: (TransferTaskItem) -> Unit,
     deviceSendStates: Map<String, String> = emptyMap(),
+    netBlocked: Boolean = false,
+    onFixBlocked: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = Dsh.colors
@@ -234,6 +236,8 @@ fun FileTransferScreen(
                         onScan = onScan,
                         onSendToDevice = onSendToDevice,
                         deviceSendStates = deviceSendStates,
+                        netBlocked = netBlocked,
+                        onFixBlocked = onFixBlocked,
                     )
                 }
 
@@ -503,6 +507,8 @@ private fun DevicesSection(
     onScan: () -> Unit,
     onSendToDevice: (NearbyDeviceItem) -> Unit,
     deviceSendStates: Map<String, String> = emptyMap(),
+    netBlocked: Boolean = false,
+    onFixBlocked: () -> Unit = {},
 ) {
     val colors = Dsh.colors
     val type = Dsh.type
@@ -532,6 +538,28 @@ private fun DevicesSection(
         }
 
         Spacer(Modifier.height(10.dp))
+
+        if (netBlocked) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("系统限制了本应用的后台联网", style = type.rowTitle, color = colors.accent)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "别的设备扫不到这台，通常是被「省电策略」的智能限制挡住了。设为「无限制」后重启本应用。",
+                        style = type.caption,
+                        color = colors.inkMuted,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.dshClickable(scaleOnPress = false, onClick = onFixBlocked).padding(4.dp)) {
+                    Text("去设置", style = type.caption, color = colors.accent)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
 
         if (devices.isEmpty()) {
             HintRow(

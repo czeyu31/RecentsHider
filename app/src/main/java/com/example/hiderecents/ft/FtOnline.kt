@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Environment
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
+import com.example.hiderecents.AppLogger
 import com.example.hiderecents.FileTransferActivity
 import com.example.hiderecents.R
 import fi.iki.elonen.NanoHTTPD
@@ -24,7 +25,7 @@ import java.net.URLDecoder
 /**
  * 文件传输的「在线接收」通道。
  *
- * 打开软件（或在文件传输页打开开关）后就常驻一个接收端：HTTP 收文件、UDP 53317 应答扫描，
+ * 打开软件（或在文件传输页打开开关）后就常驻一个接收端：HTTP 收文件、UDP 53317 应答扫描。
  * 这样电脑端软件能一直扫到这台手机，收到文件直接弹通知。
  */
 object FtOnline {
@@ -32,35 +33,40 @@ object FtOnline {
     const val PREF = "hide_recents_prefs"
     const val KEY_ONLINE = "ft_online"
 
-    /** 在线接收通道的固定端口，避免每次重启换端口导致电脑端找不到。 */
+    /** 在线接收通道的固定端口，避免每次重启换端口导致电脑端找不到。*/
     private const val BASE_PORT = 53318
     private const val UDP_PORT = 53317
+
+    /** 主动播报间隔：对方扫描窗口通常 3 秒，2 秒一喊保证一定撞上。*/
+    private const val ANNOUNCE_INTERVAL_MS = 2000L
+    // 每 60 次播报（约 2 分钟）重建一次监听 socket，防止旧 socket 半死不活
+    private const val RECYCLE_EVERY_TICKS = 60
 
     const val CHANNEL_ONLINE = "ft_online"
     const val CHANNEL_RECEIVE = "ft_receive"
     private const val RECEIVE_NOTIF_BASE = 4400
 
-    /** 文件传输页共享出去的文件：id -> 文件。在线时服务端也直接从这里取。 */
+    /** 文件传输页共享出去的文件：id -> 文件。在线时服务端也直接从这里取。*/
     val shared = linkedMapOf<String, File>()
 
-    /** 当前监听端口，未启动时为 0。 */
+    /** 当前监听端口，未启动时为 0。*/
     var port: Int = 0
         private set
 
-    /** 收到文件后的回调，页面在前台时用来把记录插进列表。 */
+    /** 收到文件后的回调，页面在前台时用来把记录插进列表。*/
     var onReceived: ((File, String) -> Unit)? = null
 
-    /** 记住发过发现包/带过名字的对方的 IP → 设备名，通知里就不用再露 IP 了。 */
+    /** 记住发过发现包、带过名字的对方的 IP → 设备名，通知里就不用再露 IP 了。*/
     private val peers = java.util.concurrent.ConcurrentHashMap<String, String>()
 
-    /** 把 IP 翻译成人能看懂的设备名：优先对方自报的名字，其次按浏览器 UA 猜，最后兜底。 */
+    /** 把 IP 翻译成人能看懂的设备名：优先对方自报的名字，其次按浏览器 UA 猜，最后兜底。*/
     fun peerLabel(ip: String, userAgent: String? = null, declared: String? = null): String {
         declared?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
         peers[ip]?.let { return it }
         return deskLabel(userAgent) ?: "附近的设备"
     }
 
-    /** 从浏览器 UA 里认出「Windows 电脑 · Edge」这种名字。 */
+    /** 从浏览器 UA 里认出「Windows 电脑 · Edge」这种名字。*/
     private fun deskLabel(ua: String?): String? {
         if (ua.isNullOrBlank()) return null
         val os = when {
@@ -122,6 +128,10 @@ object FtOnline {
 
     @Synchronized
     fun stop() {
+        runCatching { announceSocket?.close() }
+        announceSocket = null
+        runCatching { announceThread?.interrupt() }
+        announceThread = null
         runCatching { server?.stop() }
         server = null
         port = 0
@@ -129,16 +139,16 @@ object FtOnline {
         udp = null
         runCatching { udpThread?.interrupt() }
         udpThread = null
+        egressBlocked = false
         releaseLocks()
     }
 
     // ------------------------------------------------------------------ Wi-Fi 锁
-
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
 
     /**
-     * 应用退到后台后，Wi-Fi 会进入省电模式，**广播包就直接被网卡丢掉**，
+     * 应用退到后台后，Wi-Fi 会进入省电模式，**广播包就直接被网卡丢掉**。
      * 于是另一台设备扫不到这台手机（前台时又能扫到——之前就是这个不对称现象）。
      * 常驻一把高性能 Wi-Fi 锁 + 组播锁，后台也照收广播。
      */
@@ -169,7 +179,7 @@ object FtOnline {
         multicastLock = null
     }
 
-    /** 自检：能连上自己就说明接收端还活着（accept 线程可能已经挂了但端口仍在 LISTEN）。 */
+    /** 自检：能连上自己就说明接收端还活着（accept 线程可能已经挂了但端口仍在 LISTEN）。*/
     fun isAlive(): Boolean {
         val p = port
         if (p <= 0) return false
@@ -195,19 +205,160 @@ object FtOnline {
 
     // ------------------------------------------------------------------ UDP 发现
 
-    private fun bindUdpSocket(): DatagramSocket? = try {
-        val s = DatagramSocket(null)
-        s.reuseAddress = true
-        s.broadcast = true
-        s.bind(java.net.InetSocketAddress(UDP_PORT))
-        s
-    } catch (e: Exception) {
-        null
+    private var announceThread: Thread? = null
+
+    /** 正在发包的 socket，卡住时由自愈线程从外面关掉，把阻塞的 send 打断。*/
+    @Volatile
+    private var announceSocket: DatagramSocket? = null
+
+    /** 上一次播报成功发完的时刻。播报卡住时这个值不再前进，判定被系统限流。*/
+    @Volatile
+    private var lastAnnounceOkAt: Long = System.currentTimeMillis()
+
+    /** 是否疑似被系统限制后台联网（HyperOS 的「智能限制后台运行」就会这样）。*/
+    @Volatile
+    var egressBlocked: Boolean = false
+        private set
+
+    private var blockedListener: ((Boolean) -> Unit)? = null
+
+    fun setOnEgressBlocked(listener: ((Boolean) -> Unit)?) {
+        blockedListener = listener
+        runCatching { listener?.invoke(egressBlocked) }
+    }
+
+    /** 播报超过 15 秒没有成功发完，说明 send 被内核卡住了。*/
+    fun isAnnounceStalled(): Boolean =
+        port > 0 && System.currentTimeMillis() - lastAnnounceOkAt > 15_000L
+
+    /** UDP 应答 socket 是否还活着（系统掐过一次联网之后，旧 socket 常常已经废了）。*/
+    fun isUdpAlive(): Boolean = udp?.isClosed == false && udpThread?.isAlive == true
+
+    /** 重建 UDP 应答 socket：卡死的 socket 会一直堵在 receive/send 里，只能换掉。*/
+    @Synchronized
+    fun restartUdp(context: Context) {
+        runCatching { udp?.close() }
+        udp = null
+        runCatching { udpThread?.interrupt() }
+        udpThread = null
+        if (port > 0) startUdp(context.applicationContext)
+    }
+
+    /**
+     * 被限流后的自愈：关掉卡住的 socket、重建播报线程和应答 socket。
+     *
+     * 系统级的联网限制没法从应用里解除（只能让用户把「省电策略」改成无限制），
+     * 但把卡死的 socket 换掉至少能在限制解除后立刻恢复，不用等用户手动重启应用。
+     */
+    fun recoverFromBlock(context: Context) {
+        AppLogger.i("FtOnline: announce stalled, rebuilding sockets (egress blocked)")
+        runCatching { announceSocket?.close() }
+        announceSocket = null
+        runCatching { announceThread?.interrupt() }
+        announceThread = null
+        lastAnnounceOkAt = System.currentTimeMillis()
+        if (!egressBlocked) {
+            egressBlocked = true
+            runCatching { blockedListener?.invoke(true) }
+        }
+        restartUdp(context.applicationContext)
+        startAnnounce()
+    }
+
+    private fun markAnnounceOk() {
+        lastAnnounceOkAt = System.currentTimeMillis()
+        if (egressBlocked) {
+            egressBlocked = false
+            runCatching { blockedListener?.invoke(false) }
+        }
+    }
+
+    private fun startAnnounce() {
+        if (announceThread?.isAlive == true) return
+        announceThread = Thread {
+            var ticks = 0
+            while (!Thread.currentThread().isInterrupted) {
+                runCatching { sendAnnounce() }
+                ticks++
+                // 长期挂在后台时定期重建监听 socket：被系统掐过一次联网之后，
+                // 旧 socket 常常还「在」但发不出包（tx_queue 只涨不降），重建最省事。
+                if (ticks % RECYCLE_EVERY_TICKS == 0) {
+                    val c = ctx
+                    if (c != null) runCatching { restartUdp(c) }
+                }
+                runCatching { Thread.sleep(ANNOUNCE_INTERVAL_MS) }
+            }
+        }.apply { isDaemon = true; start() }
+    }
+
+    private fun sendAnnounce() {
+        if (port <= 0) {
+            markAnnounceOk()
+            return
+        }
+        val data = presenceJson().toByteArray()
+        val targets = ArrayList<String>()
+        targets += "255.255.255.255"
+        localIpAddress()?.let { ip ->
+            val prefix = ip.substringBeforeLast('.', "")
+            if (prefix.isNotEmpty()) targets += "$prefix.255"
+        }
+        // 播报也要用 IPv4 socket，双栈 socket 的 IPv4 广播在部分 ROM 上会被丢掉。
+        val sock = runCatching {
+            java.nio.channels.DatagramChannel.open(java.net.StandardProtocolFamily.INET).socket().apply {
+                broadcast = true
+                bind(java.net.InetSocketAddress(java.net.InetAddress.getByName("0.0.0.0"), 0))
+            }
+        }.getOrElse { DatagramSocket().apply { broadcast = true } }
+        announceSocket = sock
+        var sent = 0
+        try {
+            targets.forEach { host ->
+                val ok = runCatching {
+                    sock.send(
+                        DatagramPacket(data, data.size, java.net.InetAddress.getByName(host), UDP_PORT),
+                    )
+                }.isSuccess
+                if (ok) sent++
+            }
+        } finally {
+            announceSocket = null
+            runCatching { sock.close() }
+        }
+        // 一条都没发出去就当这次播报失败，交给 watchdog 判定「被限制」。
+        if (sent > 0) markAnnounceOk()
+    }
+
+    /**
+     * 必须显式开一个 IPv4 socket。
+     *
+     * 默认的 `DatagramSocket(port)` 在 Android 上是 AF_INET6 双栈 socket，IPv4 的 **广播包**
+     * 不会投递给它（单播能收到，所以 PC 单播探测一直是通的，别的手机广播扫描却永远没人应答）。
+     */
+    private fun bindUdpSocket(): DatagramSocket? {
+        for (attempt in 1..4) {
+            try {
+                val channel = java.nio.channels.DatagramChannel.open(java.net.StandardProtocolFamily.INET)
+                val s = channel.socket()
+                s.reuseAddress = true
+                s.broadcast = true
+                s.bind(java.net.InetSocketAddress(java.net.InetAddress.getByName("0.0.0.0"), UDP_PORT))
+                return s
+            } catch (e: Exception) {
+                AppLogger.e("FtOnline: bind udp 53317 failed #$attempt", e)
+                runCatching { Thread.sleep(200) }
+            }
+        }
+        return null
     }
 
     private fun startUdp(context: Context) {
         if (udp != null) return
-        val bound = bindUdpSocket() ?: return
+        val bound = bindUdpSocket()
+        if (bound == null) {
+            AppLogger.e("FtOnline: no udp listener on 53317, peers will only find us by tcp scan")
+            return
+        }
         udp = bound
         udpThread = Thread {
             val buf = ByteArray(8192)
@@ -227,7 +378,7 @@ object FtOnline {
                     continue
                 }
                 val msg = String(packet.data, 0, packet.length)
-                // 记住对方自报的名字，收到文件时就能说「来自 哪台设备」而不是 IP
+                // 记住对方自报的名字，收到文件时就能说「来自哪台设备」而不是 IP
                 runCatching {
                     val json = JSONObject(msg)
                     val alias = json.optString("alias", "").ifEmpty { json.optString("deviceName", "") }
@@ -235,32 +386,68 @@ object FtOnline {
                         packet.address?.hostAddress?.let { peers[it] = alias }
                     }
                 }
-                val reply = JSONObject().apply {
-                    put("alias", Build.MODEL)
-                    put("port", port)
-                    put("protocol", "http")
-                    put("version", "2.1")
-                    put("deviceModel", Build.MODEL)
-                    put("deviceType", "mobile")
-                    put("ip", localIpAddress() ?: "")
-                    put("online", true)
-                }.toString().toByteArray()
+                val reply = presenceJson().toByteArray()
                 runCatching {
                     cur.send(DatagramPacket(reply, reply.size, packet.address, packet.port))
                 }
-                // 对方带过来的文件（老协议）这里不处理，只应答发现请求
-                if (msg.isNotEmpty()) Unit
             }
         }.apply { isDaemon = true; start() }
+
+        startAnnounce()
     }
 
-    private fun localIpAddress(): String? =
-        runCatching {
-            NetworkInterface.getNetworkInterfaces().toList()
-                .flatMap { it.inetAddresses.toList() }
-                .firstOrNull { !it.isLoopbackAddress && it is Inet4Address }
-                ?.hostAddress
-        }.getOrNull()
+    /** 本机在局域网里的「名片」：发现请求的应答和主动播报用的是同一份。*/
+    private fun presenceJson(): String = JSONObject().apply {
+        put("alias", Build.MODEL)
+        put("port", port)
+        put("protocol", "http")
+        put("version", "2.1")
+        put("deviceModel", Build.MODEL)
+        put("deviceType", "mobile")
+        put("ip", localIpAddress() ?: "")
+        put("online", true)
+        put("app", "System Tool")
+        put("announce", true)
+    }.toString()
+
+    /**
+     * 局域网 IP：优先无线网卡，跳过蜂窝、隧道等接口。
+     *
+     * 双卡手机插着移动数据时默认路由常常落在 ccmni/rmnet 上，直接取「第一个非回环地址」
+     * 会拿到 10.x/32，广播和扫描就全跑偏了。
+     */
+    fun lanIp(): String? = runCatching {
+        var best: String? = null
+        var bestScore = -1
+        val all = java.net.NetworkInterface.getNetworkInterfaces() ?: return@runCatching null
+        for (intf in java.util.Collections.list(all)) {
+            val up = runCatching { intf.isUp }.getOrDefault(false)
+            if (!up || intf.isLoopback) continue
+            val name = intf.name.lowercase()
+            if (SKIP_IFACE.matches(name)) continue
+            for (addr in intf.inetAddresses.toList()) {
+                if (addr.isLoopbackAddress || addr !is Inet4Address) continue
+                val ip = addr.hostAddress ?: continue
+                val score = when {
+                    name.startsWith("wlan") -> 3
+                    name.startsWith("ap") || name.startsWith("swlan") || name.startsWith("eth") -> 2
+                    ip.startsWith("192.168.") -> 1
+                    ip.startsWith("10.") || ip.startsWith("172.") -> 0
+                    else -> -1
+                }
+                if (score > bestScore) {
+                    bestScore = score
+                    best = ip
+                }
+            }
+        }
+        best
+    }.getOrNull()
+
+    /** 旧名字，保留给老调用点。*/
+    fun localIpAddress(): String? = lanIp()
+
+    private val SKIP_IFACE = Regex("^(ccmni|rmnet|pdp|clat|dummy|tun|ipsec|radio)")
 
     // ------------------------------------------------------------------ 通知
 
@@ -268,7 +455,7 @@ object FtOnline {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val mgr = context.getSystemService(NotificationManager::class.java) ?: return
 
-        // 「文件传输在线」那条常驻通知已经并进状态通知，老渠道清掉
+        // 「文件传输在线」那条常驻通知已经并进状态通知，老渠道清掉。
         runCatching { mgr.deleteNotificationChannel(CHANNEL_ONLINE) }
 
         if (mgr.getNotificationChannel(CHANNEL_RECEIVE) == null) {
@@ -285,7 +472,7 @@ object FtOnline {
         }
     }
 
-    /** 收到文件：顶部弹出提醒，点开看文件；打不开就进文件传输页。 */
+    /** 收到文件：顶部弹出提醒，点开看文件；打不开就进文件传输页。*/
     fun notifyReceived(context: Context, file: File, from: String) {
         ensureChannels(context)
         val mgr = context.getSystemService(NotificationManager::class.java) ?: return
@@ -328,7 +515,6 @@ object FtOnline {
     }
 
     // ------------------------------------------------------------------ HTTP 服务端
-
     private class Server(
         private val appContext: Context,
         private val dir: File,
@@ -378,7 +564,7 @@ object FtOnline {
                 val dest = uniqueFile(dir, fileName)
                 val contentType = session.headers["content-type"] ?: ""
                 if (!contentType.startsWith("multipart/form-data")) {
-                    // 直接 POST 原始字节（curl -T / PowerShell -InFile 这类）也认
+                    // 直接 POST 原始字节（curl -T / PowerShell -InFile 这类）也支持。
                     // 注意：不能关闭 session 的 inputStream——关掉会把连接一起关掉，响应就发不回去了
                     val limit = session.headers["content-length"]?.toLongOrNull() ?: -1L
                     dest.outputStream().use { output ->
@@ -408,7 +594,7 @@ object FtOnline {
             }
         }
 
-        /** 按 Content-Length 精确读，避免一直读到连接超时（客户端会以为请求失败）。 */
+        /** 按 Content-Length 精确读，避免一直读到连接超时（客户端会以为请求失败）。*/
         private fun copyExactly(input: java.io.InputStream, output: java.io.OutputStream, limit: Long) {
             val buf = ByteArray(16 * 1024)
             var remaining = limit

@@ -79,6 +79,13 @@ class FtOnlineService : Service() {
                     FtOnline.stop()
                     FtOnline.start(this)
                     runCatching { StatusCenter.refresh(this) }
+                } else if (!FtOnline.isUdpAlive()) {
+                    // HTTP 还活着但 53317 没在听了——别的设备就永远扫不到这台手机
+                    FtOnline.restartUdp(this)
+                } else if (FtOnline.isAnnounceStalled()) {
+                    // 播报发不出去（tx_queue 卡死）：多半是被系统省电策略掐了后台联网
+                    FtOnline.recoverFromBlock(this)
+                    runCatching { StatusCenter.refresh(this) }
                 }
             }
         }.apply { isDaemon = true; start() }

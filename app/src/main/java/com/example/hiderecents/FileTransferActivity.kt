@@ -154,6 +154,9 @@ class FileTransferActivity : DshActivity() {
     /** 每个设备一条发送状态：缺省 idle / running 圆环 / done 勾 / fail 叉。 */
     private var deviceSendStates by mutableStateOf(mapOf<String, String>())
 
+    /** 疑似被系统省电策略掐了后台联网（播报发不出去）。 */
+    private var ftBlocked by mutableStateOf(false)
+
     data class DeviceInfo(
         val ip: String,
         val alias: String,
@@ -229,6 +232,9 @@ class FileTransferActivity : DshActivity() {
         val theme = AppTheme.fromPref(themePrefs.getString("ui_theme", null))
         installPageFallback = themePrefs.getBoolean("install_page_fallback", true)
         onlineReceive = FtOnline.isOn(this)
+        FtOnline.setOnEgressBlocked { blocked ->
+            runOnUiThread { ftBlocked = blocked }
+        }
         applySystemBars(theme)
 
         setContent {
@@ -264,6 +270,13 @@ class FileTransferActivity : DshActivity() {
                         }
                     },
                     onOpenTaskFile = { task -> openTaskFile(task.id) },
+                    netBlocked = ftBlocked,
+                    onFixBlocked = {
+                        runCatching { KeepAliveGuard.openPowerPolicySettings(this) }
+                            .onFailure {
+                                Toast.makeText(this, "请到「应用信息 → 省电策略」里改成「无限制」", Toast.LENGTH_LONG).show()
+                            }
+                    },
                 )
 
                 if (showSettings) {
@@ -368,6 +381,7 @@ class FileTransferActivity : DshActivity() {
     override fun onDestroy() {
         super.onDestroy()
         // 在线接收交给服务托管，页面退出时不碰它
+        FtOnline.setOnEgressBlocked(null)
         if (!onlineReceive) {
             httpServer?.stop()
             FtOnline.onReceived = null
@@ -579,7 +593,12 @@ class FileTransferActivity : DshActivity() {
 
         if (udpListener == null) {
             try {
-                udpListener = java.net.DatagramSocket(53317)
+                udpListener = java.nio.channels.DatagramChannel.open(java.net.StandardProtocolFamily.INET)
+                    .socket()
+                    .apply {
+                        reuseAddress = true
+                        bind(java.net.InetSocketAddress(java.net.InetAddress.getByName("0.0.0.0"), 53317))
+                    }
                 udpThread = Thread {
                     try {
                         val udpSocket = udpListener ?: return@Thread
@@ -639,22 +658,9 @@ class FileTransferActivity : DshActivity() {
     }
 
     private fun getDeviceIpAddress(): String {
-        try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()
-            while (interfaces.hasMoreElements()) {
-                val intf = interfaces.nextElement()
-                if (intf.isLoopback || !intf.isUp) continue
-                val addrs = intf.inetAddresses
-                while (addrs.hasMoreElements()) {
-                    val addr = addrs.nextElement()
-                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
-                        return addr.hostAddress ?: "未连接WiFi"
-                    }
-                }
-            }
-        } catch (_: Exception) {
-        }
-        return "未连接WiFi"
+        // 用 FtOnline.lanIp()：会跳过 ccmni*/rmnet* 这类蜂窝接口，否则双卡手机插着移动数据时
+        // 会拿到 10.x 的 /32，广播和同网段扫描全跑偏。
+        return FtOnline.lanIp() ?: "未连接WiFi"
     }
 
     private fun getAllIpAddresses(): List<String> {
@@ -699,9 +705,15 @@ class FileTransferActivity : DshActivity() {
             }
 
             try {
-                val socket = java.net.DatagramSocket(null)
+                // 扫描 socket 也必须是 IPv4：双栈 socket 发 IPv4 广播在部分 ROM 上会被丢掉，
+                // 表现就是「这台能扫到那台、那台扫不到这台」。
+                val socket = java.nio.channels.DatagramChannel.open(java.net.StandardProtocolFamily.INET)
+                    .socket()
                 socket.broadcast = true
                 socket.soTimeout = 3000
+                socket.bind(
+                    java.net.InetSocketAddress(java.net.InetAddress.getByName("0.0.0.0"), 0),
+                )
 
                 val announce = JSONObject().apply {
                     put("alias", Build.MODEL)
@@ -713,8 +725,12 @@ class FileTransferActivity : DshActivity() {
                 }.toString()
 
                 val data = announce.toByteArray()
-                val group = java.net.InetAddress.getByName("255.255.255.255")
-                val packet = java.net.DatagramPacket(data, data.size, group, 53317)
+                val targets = listOf(
+                    java.net.InetAddress.getByName("255.255.255.255"),
+                    // 有些路由器不转发受限广播，定向子网广播更靠谱
+                    java.net.InetAddress.getByName(ip.substringBeforeLast('.') + ".255"),
+                )
+                val packets = targets.map { java.net.DatagramPacket(data, data.size, it, 53317) }
 
                 val buf = ByteArray(8192)
                 val endTime = System.currentTimeMillis() + 4000
@@ -723,7 +739,7 @@ class FileTransferActivity : DshActivity() {
                     // 广播要反复发：对方可能刚从省电模式醒来，第一轮广播是收不到的
                     val now = System.currentTimeMillis()
                     if (now >= nextAnnounce) {
-                        runCatching { socket.send(packet) }
+                        packets.forEach { runCatching { socket.send(it) } }
                         nextAnnounce = now + 700
                     }
                     try {

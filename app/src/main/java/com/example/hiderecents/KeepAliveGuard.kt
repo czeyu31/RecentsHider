@@ -23,6 +23,39 @@ object KeepAliveGuard {
     private const val TAG = "KeepAliveGuard"
     private const val PREFS = "hide_recents_prefs"
     private const val KEY_MANUAL_AUTOSTART = "keep_alive_autostart_confirmed"
+    private const val KEY_MANUAL_POWER_POLICY = "keep_alive_power_policy_confirmed"
+
+    /**
+     * 是否是 MIUI / HyperOS / 澎湃这类有「应用级省电策略」的系统。
+     *
+     * 这一层是厂商私有的：应用管理 → 本应用 → 省电策略，默认「智能限制后台运行」，
+     * 它的系统说明里写明了会限制「后台联网」。AOSP 没有任何接口能读或改它
+     * （`dumpsys netpolicy`、`deviceidle whitelist`、`isIgnoringBatteryOptimizations` 都看不到），
+     * 所以只能引导用户手点，再让用户自己确认。
+     */
+    fun hasVendorPowerPolicy(ctx: Context): Boolean {
+        val m = runCatching { android.os.Build.MANUFACTURER.lowercase() }.getOrDefault("")
+        if (m.contains("xiaomi") || m.contains("redmi") || m.contains("poco")) return true
+        val miui = runCatching {
+            val c = Class.forName("android.os.SystemProperties")
+            val get = c.getMethod("get", String::class.java)
+            (get.invoke(null, "ro.miui.ui.version.name") as? String).orEmpty()
+        }.getOrNull().orEmpty()
+        return miui.isNotEmpty()
+    }
+
+    fun manualPowerPolicy(ctx: Context): Boolean =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_MANUAL_POWER_POLICY, false)
+
+    fun setManualPowerPolicy(ctx: Context, value: Boolean) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_MANUAL_POWER_POLICY, value).apply()
+    }
+
+    /** 厂商省电策略：非 MIUI 系系统视为不需要；MIUI 系只能靠用户手动确认。 */
+    fun powerPolicyOk(ctx: Context): Boolean =
+        !hasVendorPowerPolicy(ctx) || manualPowerPolicy(ctx)
 
     fun batteryOk(ctx: Context): Boolean {
         return runCatching {
@@ -61,7 +94,25 @@ object KeepAliveGuard {
 
     fun autoStartOk(ctx: Context): Boolean = probeAutoStart(ctx) == true || manualAutoStart(ctx)
 
-    fun allSatisfied(ctx: Context): Boolean = batteryOk(ctx) && autoStartOk(ctx)
+    fun allSatisfied(ctx: Context): Boolean =
+        batteryOk(ctx) && autoStartOk(ctx) && powerPolicyOk(ctx)
+
+    /**
+     * 打开本应用的系统详情页（HyperOS/MIUI 上这里就有「省电策略」入口）。
+     *
+     * 没有公开的深链能直达那一页：`com.miui.powerkeeper` 的电池详情 Activity 各版本名字都不一样，
+     * 乱猜会闪退，所以稳定跳到应用信息页，让用户点一下「省电策略」。
+     */
+    fun openPowerPolicySettings(ctx: Context) {
+        val detail = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        detail.data = Uri.parse("package:" + ctx.packageName)
+        detail.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (runCatching { ctx.startActivity(detail) }.isSuccess) return
+        val list = Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS)
+        list.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { ctx.startActivity(list) }
+            .onFailure { Log.w(TAG, "open power policy settings failed: " + it.message) }
+    }
 
     fun openBatterySettings(ctx: Context) {
         val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)

@@ -14,15 +14,15 @@ android {
         applicationId = "com.tools.systemtool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 482
-        versionName = "3.2.9"
+        versionCode = 485
+        versionName = "3.2.12"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             isDebuggable = false
-            // 用 debug keystore 签名，保证可原地覆盖同签名的旧包
+            // �?debug keystore 签名，保证可原地覆盖同签名的旧包
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -58,10 +58,10 @@ dependencies {
 
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
-    // 服务端 AIDL（IShizukuService/IRemoteProcess）：用户服务连不上时用 newProcess 兜底执行命令
+    // 服务�?AIDL（IShizukuService/IRemoteProcess）：用户服务连不上时�?newProcess 兜底执行命令
     implementation("dev.rikka.shizuku:aidl:13.1.5")
 
-    // ---- Compose (UI 重写层) ----
+    // ---- Compose (UI 重写�? ----
     val composeBom = platform("androidx.compose:compose-bom:2023.08.00")
     implementation(composeBom)
     implementation("androidx.activity:activity-compose:1.8.0")

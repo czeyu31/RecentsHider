@@ -73,6 +73,8 @@ class MainActivity : AppCompatActivity() {
     private var keepAliveAutoStartOk by mutableStateOf(false)
     private var keepAliveAutoStartUnknown by mutableStateOf(false)
     private var keepAliveManualAutoStart by mutableStateOf(false)
+    private var keepAlivePowerPolicyNeeded by mutableStateOf(false)
+    private var keepAlivePowerPolicyOk by mutableStateOf(true)
     private var showKeepAliveGuide by mutableStateOf(false)
 
     private val serviceConnection = object : ServiceConnection {
@@ -169,11 +171,18 @@ class MainActivity : AppCompatActivity() {
                         autoStartOk = keepAliveAutoStartOk,
                         autoStartUnknown = keepAliveAutoStartUnknown,
                         manualAutoStart = keepAliveManualAutoStart,
+                        powerPolicyNeeded = keepAlivePowerPolicyNeeded,
+                        powerPolicyOk = keepAlivePowerPolicyOk,
                         // 点「电池优化 / 自启动」不再关闭卡片：跳系统页，回来自动重新检测
                         onOpenBatterySettings = { KeepAliveGuard.openBatterySettings(this@MainActivity) },
                         onOpenAutoStartSettings = { KeepAliveGuard.openAutoStartSettings(this@MainActivity) },
                         onManualAutoStartChange = {
                             KeepAliveGuard.setManualAutoStart(this@MainActivity, it)
+                            refreshKeepAliveGuideState()
+                        },
+                        onOpenPowerPolicySettings = { KeepAliveGuard.openPowerPolicySettings(this@MainActivity) },
+                        onManualPowerPolicyChange = {
+                            KeepAliveGuard.setManualPowerPolicy(this@MainActivity, it)
                             refreshKeepAliveGuideState()
                         },
                         onRecheck = { refreshKeepAliveGuideState() },
@@ -542,6 +551,8 @@ class MainActivity : AppCompatActivity() {
         keepAliveAutoStartOk = KeepAliveGuard.autoStartOk(this)
         keepAliveAutoStartUnknown = KeepAliveGuard.autoStartUnknown(this)
         keepAliveManualAutoStart = KeepAliveGuard.manualAutoStart(this)
+        keepAlivePowerPolicyNeeded = KeepAliveGuard.hasVendorPowerPolicy(this)
+        keepAlivePowerPolicyOk = KeepAliveGuard.manualPowerPolicy(this)
     }
 
     private fun enableKeepAlive() {
@@ -563,7 +574,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun toggleKeepAlive(value: Boolean) {
         if (value) {
-            // 只有「电池优化 + 自启动」都满足才真正打开开关；
+            // 只有「电池优化 + 自启动 + 厂商省电策略」都满足才真正打开开关；
             // 否则先弹引导，开关保持关闭（用户只点「稍后再说」时也不会被打开）。
             refreshKeepAliveGuideState()
             if (KeepAliveGuard.allSatisfied(this)) {
@@ -571,7 +582,12 @@ class MainActivity : AppCompatActivity() {
             } else {
                 showKeepAliveGuide = true
                 refreshState()
-                Toast.makeText(this, "请先完成电池优化与自启动设置", Toast.LENGTH_SHORT).show()
+                val hint = if (keepAlivePowerPolicyNeeded) {
+                    "请先完成电池优化、自启动与省电策略设置"
+                } else {
+                    "请先完成电池优化与自启动设置"
+                }
+                Toast.makeText(this, hint, Toast.LENGTH_SHORT).show()
             }
         } else {
             prefs.edit().putBoolean("keep_alive_enabled", false).apply()
