@@ -48,7 +48,7 @@ import com.example.hiderecents.ui.theme.rememberMotionEnabled
 /** 自绘图标集：统一 24x24 坐标系、1.5dp 描边、圆头端点。不使用 Material 图标库默认形状。 */
 enum class DshIconKind {
     GEAR, GRID, SHIELD, CHEVRON, SEARCH, TERMINAL, BELL, PACKAGE, TRANSFER, MENU, ARROW_LEFT, ARROW_RIGHT,
-    FILE, IMAGE, CLIPBOARD, FOLDER, BACK, SLIDERS, HEART
+    FILE, IMAGE, CLIPBOARD, FOLDER, BACK, SLIDERS, HEART, THERMO, PLAY, STOP
 }
 
 /** 画布背景：主题底色的纵向渐变（纸本是纸面提亮到纸影，石墨是冷石墨到更深的底）。 */
@@ -192,6 +192,54 @@ fun DshIcon(
                 drawCircle(color = tint, radius = 2f * u, center = Offset(15f * u, 12f * u), style = stroke)
                 line(4f, 17f, 20f, 17f)
                 drawCircle(color = tint, radius = 2f * u, center = Offset(8f * u, 17f * u), style = stroke)
+            }
+
+            DshIconKind.THERMO -> {
+                // 温度计：球茎 + 管身 + 刻度，管身里的水银用实心段表示
+                val stem = Path().apply {
+                    moveTo(10.6f * u, 4.4f * u)
+                    lineTo(13.4f * u, 4.4f * u)
+                    lineTo(13.4f * u, 14.2f * u)
+                    lineTo(10.6f * u, 14.2f * u)
+                    close()
+                }
+                drawPath(stem, tint, style = stroke)
+                drawCircle(color = tint, radius = 3.6f * u, center = Offset(12f * u, 17.6f * u), style = stroke)
+                drawLine(
+                    color = tint,
+                    start = Offset(12f * u, 20.2f * u),
+                    end = Offset(12f * u, 21.4f * u),
+                    strokeWidth = w,
+                    cap = StrokeCap.Round,
+                )
+                line(15.4f, 7f, 16.8f, 7f)
+                line(15.4f, 10f, 16.8f, 10f)
+                drawLine(
+                    color = tint,
+                    start = Offset(12f * u, 12.2f * u),
+                    end = Offset(12f * u, 17.6f * u),
+                    strokeWidth = 2.2f * u,
+                    cap = StrokeCap.Round,
+                )
+            }
+
+            DshIconKind.PLAY -> {
+                val p = Path().apply {
+                    moveTo(8.2f * u, 5.4f * u)
+                    lineTo(18.6f * u, 12f * u)
+                    lineTo(8.2f * u, 18.6f * u)
+                    close()
+                }
+                drawPath(p, tint)
+            }
+
+            DshIconKind.STOP -> {
+                drawRoundRect(
+                    color = tint,
+                    topLeft = Offset(7f * u, 7f * u),
+                    size = Size(10f * u, 10f * u),
+                    cornerRadius = CornerRadius(1.8f * u, 1.8f * u),
+                )
             }
 
             DshIconKind.GEAR -> {

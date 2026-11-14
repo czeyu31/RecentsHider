@@ -127,6 +127,9 @@ class MainActivity : AppCompatActivity() {
         // 上次开着「在线接收」的话，开机进来就把接收端捞起来
         if (FtOnline.isOn(this)) FtOnlineService.start(this)
 
+        // 温度采样从进入软件就开始跑，切后台也不停（页面只在需要时读它的状态）
+        com.example.hiderecents.temp.TempSampler.ensureRunning(this)
+
         setContent {
             DshTheme(theme = appTheme) {
                 HomeScreen(
@@ -138,6 +141,11 @@ class MainActivity : AppCompatActivity() {
                         overridePendingTransition(R.anim.enter_right_to_left, 0)
                     },
                     onOpenAccessibility = { openAccessibility() },
+                    onOpenTemperature = {
+                        startActivity(Intent(this@MainActivity, TempActivity::class.java))
+                        @Suppress("DEPRECATION")
+                        overridePendingTransition(R.anim.enter_right_to_left, 0)
+                    },
                     onOpenSettings = { showSettings = true },
                     onRetryShizuku = {
                         checkShizukuPermission()

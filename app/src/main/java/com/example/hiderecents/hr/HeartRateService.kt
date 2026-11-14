@@ -124,6 +124,54 @@ class HeartRateService : Service() {
 
     fun currentState(): HrLiveState = state
 
+    // ------------------------------------------------------------------ 录制
+    // 录制归服务管：界面退出（例如返回工具箱）后采样继续，回来还能看到 REC 在走。
+
+    private val recValues = ArrayList<Int>()
+    private var recStartAt = 0L
+    private var recGapIndex = -1
+    private var recActive = false
+
+    fun isRecording(): Boolean = recActive
+
+    fun recElapsedSec(): Int =
+        if (!recActive) 0 else ((System.currentTimeMillis() - recStartAt) / 1000L).toInt()
+
+    fun startRecording(): Boolean {
+        if (state.link != HrLink.READY) return false
+        recValues.clear()
+        recGapIndex = -1
+        recStartAt = System.currentTimeMillis()
+        recActive = true
+        return true
+    }
+
+    /** 停止并返回这次录制；样本不足 5 个返回 null（内部已清空）。 */
+    fun stopRecording(): HrSession? {
+        if (!recActive) return null
+        recActive = false
+        val elapsed = ((System.currentTimeMillis() - recStartAt) / 1000L).toInt()
+        if (recValues.size < 5) {
+            recValues.clear()
+            return null
+        }
+        val values = downsample(recValues.toList(), 600)
+        val gap = if (recGapIndex < 0) -1 else
+            (recGapIndex.toDouble() * values.size / recValues.size).toInt().coerceIn(0, values.lastIndex)
+        val session = HrSession(
+            id = System.currentTimeMillis(),
+            startedAt = recStartAt,
+            durationSec = elapsed.coerceAtLeast(values.size),
+            values = values,
+            gapIndex = gap,
+            deviceName = state.deviceName,
+            deviceMac = state.deviceMac,
+        )
+        recValues.clear()
+        recStartAt = 0L
+        return session
+    }
+
     /** 界面主动断开：断开连接、收掉通知，服务自己收工。 */
     fun disconnectLink() {
         stopWanted = true
@@ -188,6 +236,11 @@ class HeartRateService : Service() {
                     recent = (state.recent + value).takeLast(60),
                 ),
             )
+            // 录制也归服务：页面退出了照样在攒样本
+            if (recActive) {
+                if (gap == 1 && recGapIndex < 0) recGapIndex = recValues.size
+                recValues.add(value)
+            }
             listener?.onBeat(value, now)
         }
         ble.onRssi = { value -> update(state.copy(rssi = value)) }

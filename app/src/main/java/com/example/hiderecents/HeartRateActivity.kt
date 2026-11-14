@@ -120,9 +120,7 @@ class HeartRateActivity : DshActivity() {
 
     // 录制
     private var recording by mutableStateOf(false)
-    private var recStartAt = 0L
-    private val recValues = ArrayList<Int>()
-    private var recGapIndex = -1
+    // 录制缓冲已移到 HeartRateService：界面退出后台录制继续
 
     // 历史
     private var sessions by mutableStateOf<List<HrSession>>(emptyList())
@@ -147,39 +145,19 @@ class HeartRateActivity : DshActivity() {
                     while (true) {
                         delay(1000)
                         nowTick = System.currentTimeMillis()
+                        // 录制状态归服务管：从后台/别的页面回来要能对上，不能停在旧值
+                        hr?.let { recording = it.isRecording() }
                     }
                 }
 
                 Box(Modifier.fillMaxSize()) {
-                    // 三屏之间要有推进/退回的过渡，不能硬切
-                    AnimatedContent(
-                        targetState = screen to opened,
-                        transitionSpec = {
-                            val forward = when {
-                                initialState.first == Screen.LIVE && targetState.first != Screen.LIVE -> true
-                                initialState.first == Screen.HISTORY && targetState.first == Screen.REPORT -> true
-                                else -> false
-                            }
-                            if (forward) {
-                                (slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { it / 5 } +
-                                    fadeIn(tween(200))) togetherWith
-                                    (slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { -it / 12 } +
-                                        fadeOut(tween(160)))
-                            } else {
-                                (slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { -it / 5 } +
-                                    fadeIn(tween(200))) togetherWith
-                                    (slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { it / 12 } +
-                                        fadeOut(tween(160)))
-                            }
-                        },
-                        label = "hrScreen",
-                    ) { target ->
-                        val s = target.second
-                        when {
-                            target.first == Screen.REPORT && s != null -> Report(s)
-                            target.first == Screen.HISTORY -> History()
-                            else -> Live()
-                        }
+                    // 本项目 Compose 版本上，AnimatedContent 包整页切换会在重组时偶发
+                    // IndexOutOfBoundsException（Stack.pop），表现为点「录制历史」直接闪退，
+                    // 所以三屏改成直接切换，不做整页转场。
+                    when (screen) {
+                        Screen.REPORT -> opened?.let { Report(it) } ?: Live()
+                        Screen.HISTORY -> History()
+                        else -> Live()
                     }
 
                     if (showSettings) {
@@ -299,12 +277,9 @@ class HeartRateActivity : DshActivity() {
         if (st.recent.isNotEmpty() && st.recent != liveValues) liveValues = st.recent
     }
 
+    /** 录制缓冲搬到服务里了，这里只保留回调入口（界面不需要再做任何事）。 */
     private fun recordBeat(value: Int, at: Long) {
-        if (lastBeatAt > 0 && at - lastBeatAt > GAP_MS && recGapIndex < 0 && recording) {
-            recGapIndex = recValues.size
-        }
-        // liveValues 由服务推送的 state.recent 统一维护，这里不再重复追加
-        if (recording) recValues.add(value)
+        // liveValues 由服务推送的 state.recent 统一维护；录制样本由服务自己攒
     }
 
     /** 上次连过、开着「自动连接」就直接连，连不上再退回选设备。 */
@@ -390,58 +365,46 @@ class HeartRateActivity : DshActivity() {
     // ------------------------------------------------------------------ 录制
 
     private fun toggleRecording() {
-        if (recording) {
-            stopRecording()
+        val svc = hr ?: run {
+            toast("服务还没就绪，稍后再试")
+            return
+        }
+        if (svc.isRecording()) {
+            val session = svc.stopRecording()
+            recording = false
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (session == null) {
+                toast("样本太少，这次没有保存")
+                return
+            }
+            sessions = (listOf(session) + sessions).take(50)
+            HeartRateStore.save(this, sessions)
+            opened = session
+            reportFromHistory = false
+            screen = Screen.REPORT
         } else {
             if (link != HrLink.READY) {
                 toast("先连接一台心率设备")
                 if (!showPicker) openPicker()
                 return
             }
-            recValues.clear()
-            recGapIndex = -1
-            recStartAt = System.currentTimeMillis()
-            recording = true
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (svc.startRecording()) {
+                recording = true
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
         }
     }
 
     private fun stopRecording() {
-        recording = false
-        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val elapsed = ((System.currentTimeMillis() - recStartAt) / 1000L).toInt()
-        if (recValues.size < 5) {
-            toast("只收到 " + recValues.size + " 个样本，这次没有保存")
-            recValues.clear()
-            return
-        }
-        // 注意：downsample 在样本不超上限时会原样返回同一个 List，先把录制缓冲拷一份
-        val values = downsample(recValues.toList(), 600)
-        val gap = if (recGapIndex < 0) -1 else
-            (recGapIndex.toDouble() * values.size / recValues.size).toInt().coerceIn(0, values.lastIndex)
-        val session = HrSession(
-            id = System.currentTimeMillis(),
-            startedAt = recStartAt,
-            durationSec = elapsed.coerceAtLeast(values.size),
-            values = values,
-            gapIndex = gap,
-            deviceName = device?.name.orEmpty(),
-            deviceMac = device?.address.orEmpty(),
-        )
-        recValues.clear()
-        sessions = (listOf(session) + sessions).take(50)
-        HeartRateStore.save(this, sessions)
-        opened = session
-        reportFromHistory = false
-        screen = Screen.REPORT
+        toggleRecording()
     }
+
 
     /** 会话时长从连上设备那一刻算起，跟录不录制无关；录制时长在右上角 REC 里。 */
     private fun sessionElapsed(): Int =
         if (connectedAt <= 0L) 0 else ((nowTick - connectedAt) / 1000L).toInt()
 
-    private fun recElapsed(): Int =
-        if (!recording) 0 else ((System.currentTimeMillis() - recStartAt) / 1000L).toInt()
+    private fun recElapsed(): Int = hr?.recElapsedSec() ?: 0
 
     private fun ageText(): String {
         if (lastBeatAt == 0L) return if (link == HrLink.READY) "等待数据" else "未连接"

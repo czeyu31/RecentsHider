@@ -74,6 +74,7 @@ fun HomeScreen(
     state: HomeUiState,
     onOpenToolbox: () -> Unit,
     onOpenAccessibility: () -> Unit,
+    onOpenTemperature: () -> Unit,
     onOpenSettings: () -> Unit,
     onRetryShizuku: () -> Unit,
     onToggleKeepAlive: (Boolean) -> Unit,
@@ -218,7 +219,12 @@ fun HomeScreen(
                             }
                         }
                         Spacer(Modifier.height(12.dp))
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .dshClickable(scaleOnPress = false, onClick = onOpenTemperature),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Box(
                                 Modifier
                                     .size(5.dp)
@@ -232,6 +238,8 @@ fun HomeScreen(
                                 style = type.label,
                                 color = colors.inkFaint,
                             )
+                            Spacer(Modifier.weight(1f))
+                            DshIcon(DshIconKind.CHEVRON, iconSize = 10.dp, tint = colors.inkFaint)
                         }
                     }
                 } else {
@@ -249,7 +257,19 @@ fun HomeScreen(
                             Box(Modifier.width(1.dp).height(44.dp).background(color = colors.hairline))
                             FactColumn("守护中", state.protectedCount.toString(), "个服务", Modifier.weight(1f).padding(start = 20.dp))
                             Box(Modifier.width(1.dp).height(44.dp).background(color = colors.hairline))
-                            FactColumn("温度", state.batteryTemp, "°C", Modifier.weight(1f).padding(start = 20.dp))
+                            // 这一列就是温度页入口：点温度数字进实时/录制/回放
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .dshClickable(scaleOnPress = false, onClick = onOpenTemperature),
+                            ) {
+                                FactColumn(
+                                    "温度",
+                                    state.batteryTemp,
+                                    "°C",
+                                    Modifier.fillMaxWidth().padding(start = 20.dp),
+                                )
+                            }
                         }
                         Spacer(Modifier.height(12.dp))
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
