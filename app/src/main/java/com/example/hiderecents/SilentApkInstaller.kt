@@ -101,34 +101,51 @@ object SilentApkInstaller {
         val cp = exec("cp '" + apkFile.absolutePath + "' " + tmp)
         val src = if (cp.first) tmp else apkFile.absolutePath
 
-        // 1) 管道形式：这台 ROM 上唯一稳定成功的一条
-        val pipe = exec("cat '" + src + "' | pm install -S " + size)
-        if (pipe.first || pipe.second.contains("Success")) {
-            exec("rm -f " + tmp)
-            return Pair(true, pipe.second)
+        // MIUI 会以 INSTALL_FAILED_USER_RESTRICTED 拦掉「没有安装器身份」的 shell 安装，
+        // 换上应用商店 / 安装器的包名再试一遍，多数机器就能放过
+        val installers = listOf("com.android.vending", "com.miui.packageinstaller", null)
+        var last = ""
+
+        // 1) 管道形式：这台 ROM 上最稳的一条
+        for (pkg in installers) {
+            val id = if (pkg == null) "" else " -i " + pkg
+            val pipe = exec("cat '" + src + "' | pm install -r -S " + size + id)
+            last = pipe.second
+            // 只看退出码：会话式脚本里 install-write 的输出也带 Success，不能拿来判成功
+            if (pipe.first && !pipe.second.contains("Failure")) {
+                exec("rm -f " + tmp)
+                return Pair(true, pipe.second)
+            }
         }
 
-        // 2) 直接 pm install -r
-        val direct = exec("pm install -r " + src)
-        if (direct.first || direct.second.contains("Success")) {
-            exec("rm -f " + tmp)
-            return Pair(true, direct.second)
+        // 2) 直接 pm install -r（同样带安装器身份）
+        for (pkg in installers) {
+            val id = if (pkg == null) "" else " -i " + pkg
+            val direct = exec("pm install -r " + id.trim() + " " + src)
+            last = direct.second
+            if (direct.first && !direct.second.contains("Failure")) {
+                exec("rm -f " + tmp)
+                return Pair(true, direct.second)
+            }
         }
 
-        // 3) 会话式安装
-        val create = exec("pm install-create -r -S " + size)
-        val open = create.second.indexOf('[')
-        val close = if (open >= 0) create.second.indexOf(']', open + 1) else -1
-        val sid = if (open >= 0 && close > open) create.second.substring(open + 1, close) else null
-        if (sid != null) {
-            val w = exec("pm install-write " + sid + " base " + src)
-            val commit = exec("pm install-commit " + sid)
+        // 3) 会话式安装：必须一条命令跑完。
+        // Shizuku 的 newProcess 每条命令都是新进程，分开发会丢会话
+        // （install-commit 报 SecurityException: Caller has no access to session）
+        for (pkg in installers) {
+            val id = if (pkg == null) "" else " -i " + pkg
+            val script = """
+                SID=${'$'}(pm install-create -r -S $size$id 2>&1 | sed -n 's/.*\[\([0-9]*\)\].*/\1/p')
+                if [ -z "${'$'}SID" ]; then echo NO_SESSION; exit 1; fi
+                pm install-write ${'$'}SID base '$src' && pm install-commit ${'$'}SID
+            """.trimIndent()
+            val session = exec(script)
+            last = session.second
             exec("rm -f " + tmp)
-            if (commit.first || commit.second.contains("Success")) return Pair(true, commit.second)
-            return Pair(false, commit.second.ifBlank { w.second })
+            if (session.first && !session.second.contains("Failure")) return Pair(true, session.second)
         }
         exec("rm -f " + tmp)
-        return Pair(false, direct.second.ifBlank { create.second })
+        return Pair(false, last)
     }
 
     /**
@@ -138,7 +155,11 @@ object SilentApkInstaller {
      */
     fun install(apkFile: File, ownBinder: IBinder?): Pair<Boolean, String> {
         val direct = installShell(apkFile, ownBinder)
-        if (direct.first) return direct
+        // 某些 ROM 上 shell 安装会回 Success，但随后被系统静默取消；
+        // 这种情况必须核对包到底有没有落地，否则任务会被误标成「已安装」，用户什么都看不到
+        val reallyInstalled = direct.first && verifyInstalled(apkFile)
+        AppLogger.i("install: shell ok=" + direct.first + " verified=" + reallyInstalled)
+        if (reallyInstalled) return direct
         val ctx = appContext
         if (ctx == null || !pageFallbackEnabled()) {
             AppLogger.i("install: shell failed, page fallback off => " + direct.second.take(120))
@@ -146,5 +167,27 @@ object SilentApkInstaller {
         }
         val sys = installViaSystem(ctx, apkFile)
         return if (sys.first) sys else Pair(false, direct.second.ifBlank { sys.second })
+    }
+
+    /**
+     * 核对 APK 是否真的装上了：读 apk 里的包名与版本号，和系统里已安装的比一比。
+     * 读不到信息时按「无法判断」放行，避免误弹安装页。
+     */
+    private fun verifyInstalled(apkFile: File): Boolean {
+        val ctx = appContext ?: return true
+        val archive = runCatching {
+            @Suppress("DEPRECATION")
+            ctx.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+        }.getOrNull() ?: return true
+        val want = archive.longVersionCode
+        repeat(4) { attempt ->
+            val installed = runCatching {
+                ctx.packageManager.getPackageInfo(archive.packageName, 0)
+            }.getOrNull()
+            if (installed != null && installed.longVersionCode >= want) return true
+            if (attempt < 3) Thread.sleep(350)
+        }
+        AppLogger.w("verifyInstalled: " + archive.packageName + " 期望 " + want + "，系统里没有对应版本")
+        return false
     }
 }

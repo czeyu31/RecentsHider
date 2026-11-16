@@ -62,6 +62,7 @@ class TempActivity : DshActivity() {
 
         setContent {
             DshTheme(theme) {
+
                 // 录制中的秒表：只刷新 REC 时长
                 LaunchedEffect(TempSampler.recording) {
                     while (TempSampler.recording) {
@@ -93,7 +94,10 @@ class TempActivity : DshActivity() {
                             intervalLabel = (TempSampler.intervalMs / 1000L).toString() + "s",
                             sampleIntervalMs = TempSampler.intervalMs,
                             onBack = { dshGoBack() },
-                            onOpenHistory = { screen = Screen.HISTORY },
+                            onOpenHistory = {
+                            sessions = TempStore.load(this).filter { it.values.isNotEmpty() }
+                            screen = Screen.HISTORY
+                        },
                             onToggleRecording = { toggleRecording() },
                             onCycleInterval = { cycleInterval() },
                             onSelectZone = { label ->

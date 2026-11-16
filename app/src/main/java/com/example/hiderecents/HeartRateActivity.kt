@@ -443,7 +443,11 @@ class HeartRateActivity : DshActivity() {
             recording = recording,
             recTime = clockOf(recElapsed()),
             onBack = { dshGoBack() },
-            onOpenHistory = { screen = Screen.HISTORY },
+            onOpenHistory = {
+                            // 岛上录制的会话是服务写的，进历史前重读一次
+                            sessions = HeartRateStore.load(this).filter { it.values.isNotEmpty() }
+                            screen = Screen.HISTORY
+                        },
             onOpenSettings = { showSettings = true },
             onToggleRecording = { toggleRecording() },
             onChangeDevice = { openPicker() },

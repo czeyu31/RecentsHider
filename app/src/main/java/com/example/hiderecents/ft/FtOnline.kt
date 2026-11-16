@@ -13,6 +13,7 @@ import androidx.core.content.FileProvider
 import com.example.hiderecents.AppLogger
 import com.example.hiderecents.FileTransferActivity
 import com.example.hiderecents.R
+import com.example.hiderecents.SilentApkInstaller
 import fi.iki.elonen.NanoHTTPD
 import org.json.JSONObject
 import java.io.File
@@ -472,7 +473,22 @@ object FtOnline {
         }
     }
 
-    /** 收到文件：顶部弹出提醒，点开看文件；打不开就进文件传输页。*/
+    /**
+     * 在线接收也要认「接收 APK 自动安装」这个开关。
+     *
+     * 之前只有「文件传输」页内的那个 HTTP 服务会装，在线接收（常驻 53318）走的是这里，
+     * 收到 APK 只弹通知不安装，看起来就是开关没生效。
+     */
+    private fun maybeAutoInstall(context: Context, file: File) {
+        if (!file.name.endsWith(".apk", ignoreCase = true)) return
+        val prefs = context.getSharedPreferences("file_transfer_settings", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("auto_install_apk", false)) return
+        Thread {
+            val res = SilentApkInstaller.install(file, null)
+            AppLogger.i("online receive autoInstall: ok=" + res.first + " out=" + res.second.take(160))
+        }.start()
+    }
+
     fun notifyReceived(context: Context, file: File, from: String) {
         ensureChannels(context)
         val mgr = context.getSystemService(NotificationManager::class.java) ?: return
@@ -584,6 +600,7 @@ object FtOnline {
                 )
                 onReceived?.invoke(dest, from)
                 notifyReceived(appContext, dest, from)
+                maybeAutoInstall(appContext, dest)
                 newFixedLengthResponse(
                     Response.Status.OK,
                     "application/json",

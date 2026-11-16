@@ -62,6 +62,9 @@ class SplashActivity : AppCompatActivity() {
             NotificationHistoryActivity::class.java.name,
             FileTransferActivity::class.java.name,
             ApkInstallerActivity::class.java.name,
+            TempActivity::class.java.name,
+            IslandActivity::class.java.name,
+            HeartRateActivity::class.java.name,
         )
     }
 

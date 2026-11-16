@@ -283,7 +283,22 @@ class FileTransferActivity : DshActivity() {
                     SettingsSheet(
                         downloadPath = downloadDir.absolutePath,
                         autoInstall = autoInstallApk,
-                        onToggleAutoInstall = { autoInstallApk = it },
+                        onToggleAutoInstall = { on ->
+                            autoInstallApk = on
+                            // 开关即时落盘，避免没点「保存」就丢掉
+                            prefs.edit().putBoolean("auto_install_apk", on).apply()
+                            // MIUI 会拦掉 shell 静默安装（INSTALL_FAILED_USER_RESTRICTED），
+                            // 没有安装页兜底这个开关等于没用，打开自动安装时一并打开
+                            if (on && !installPageFallback) {
+                                installPageFallback = true
+                                themePrefs.edit().putBoolean("install_page_fallback", true).apply()
+                                Toast.makeText(
+                                    this,
+                                    "已同时打开「系统安装页兜底」：本机不允许 shell 静默安装",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        },
                         installPageFallback = installPageFallback,
                         onlineReceive = onlineReceive,
                         onToggleOnlineReceive = { on ->
@@ -1221,9 +1236,26 @@ class FileTransferActivity : DshActivity() {
             val res = SilentApkInstaller.install(apkFile, taskHideService)
             AppLogger.i("installApk: waited=${waited}ms ok=${res.first} output=${res.second.take(240)}")
             // 系统安装页兜底已收进 SilentApkInstaller.install（受偏好 install_page_fallback 控制）
-            if (res.first) return true
+            if (res.first) {
+                // 走系统安装页时才需要用户点一下确认，得说清楚
+                if (res.second.contains("系统安装器")) {
+                    runOnUiThread {
+                        Toast.makeText(this, "已交给系统安装页，请点「继续安装」", Toast.LENGTH_LONG).show()
+                    }
+                }
+                return true
+            }
             runOnUiThread {
-                Toast.makeText(this, "静默安装失败：" + res.second.take(60), Toast.LENGTH_LONG).show()
+                val why = if (!Shizuku.pingBinder()) {
+                    "Shizuku 未运行"
+                } else {
+                    res.second.take(60).ifBlank { "系统拒绝安装" }
+                }
+                Toast.makeText(
+                    this,
+                    "自动安装失败（$why）。安装包已保存，点任务卡片可手动安装",
+                    Toast.LENGTH_LONG,
+                ).show()
             }
         } catch (e: Exception) {
             AppLogger.e("installApk: Shizuku failed", e)

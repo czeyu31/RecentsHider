@@ -17,6 +17,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.hiderecents.HeartRateActivity
 import com.example.hiderecents.R
+import com.example.hiderecents.island.IslandPublish
+import com.example.hiderecents.island.IslandV3
+import com.example.hiderecents.island.IslandSettings
 
 /** 服务对外暴露的一帧状态，界面照着它画就行。 */
 data class HrLiveState(
@@ -48,6 +51,10 @@ class HeartRateService : Service() {
     companion object {
         const val ACTION_CONNECT = "com.example.hiderecents.hr.CONNECT"
         const val ACTION_DISCONNECT = "com.example.hiderecents.hr.DISCONNECT"
+    /** 岛上「开始/停止录制」按钮走这个动作 */
+    const val ACTION_TOGGLE_RECORD = "com.example.hiderecents.hr.TOGGLE_RECORD"
+    /** 设置页改完优先级/开关后立刻重刷岛 */
+    const val ACTION_REFRESH_ISLAND = "com.example.hiderecents.hr.REFRESH_ISLAND"
         const val EXTRA_MAC = "mac"
         const val EXTRA_NAME = "name"
 
@@ -117,6 +124,9 @@ class HeartRateService : Service() {
         }
     }
     private var notificationShown = false
+    /** V3 焦点通知通道的会话 id / 序号（每次上岛换新 id） */
+    private var v3IslandId: Int? = null
+    private var v3Seq = 0
     private var lastNotifiedAt = 0L
     private var lastNotifiedBpm = -1
 
@@ -274,6 +284,29 @@ class HeartRateService : Service() {
                     ble.connect(HrDevice(mac, name, 0))
                 }
             }
+            ACTION_REFRESH_ISLAND -> {
+                // 设置改了优先级/开关：丢掉旧会话，按新设置重新上岛
+                v3IslandId?.let { IslandV3.dismiss(this, it) }
+                v3IslandId = null
+                v3Seq = 0
+                refreshNotification()
+            }
+
+            ACTION_TOGGLE_RECORD -> {
+                if (recActive) {
+                    // 岛上停止录制：必须在这里落盘，否则历史里看不到这次会话
+                    val session = stopRecording()
+                    if (session != null) {
+                        val list = (listOf(session) + HeartRateStore.load(this)).take(50)
+                        HeartRateStore.save(this, list)
+                    }
+                } else {
+                    startRecording()
+                }
+                refreshNotification()
+                listener?.onState(state)
+            }
+
             ACTION_DISCONNECT -> {
                 stopWanted = true
                 wantLink = false
@@ -287,6 +320,8 @@ class HeartRateService : Service() {
     }
 
     override fun onDestroy() {
+        v3IslandId?.let { IslandV3.dismiss(this, it) }
+        v3IslandId = null
         wantLink = false
         retryHandler.removeCallbacks(retryTick)
         ble.disconnect()
@@ -315,10 +350,16 @@ class HeartRateService : Service() {
             state.link == HrLink.READY -> "等待心率数据"
             else -> "心率广播"
         }
-        val text = when {
+        val base = when {
             state.link == HrLink.CONNECTING || state.link == HrLink.IDLE -> state.linkText.ifEmpty { "广播 0x180D" }
             state.linkText.isNotEmpty() && state.bpm == 0 -> state.linkText
             else -> state.deviceName.ifEmpty { "广播 0x180D" }
+        }
+        // 展开态在设备名后面补信号强度（设置里可关）
+        val text = if (IslandSettings.heartEnabled && IslandSettings.heartShowSignal && state.rssi != 0) {
+            base + " · 信号 " + state.rssi + " dBm"
+        } else {
+            base
         }
 
         val open = PendingIntent.getActivity(
@@ -335,19 +376,20 @@ class HeartRateService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        // 岛的发布统一交给 IslandPublish / IslandV3，前台服务通知只负责「连接状态」这一件事，
+        // 不挂 miui.focus.param —— 两套结构同时挂会互相顶
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_heart)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(open)
             .addAction(0, "断开", stop)
             .setOngoing(true)
-            .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+        return builder.build()
     }
 
     private fun startForegroundCompat() {
@@ -382,7 +424,103 @@ class HeartRateService : Service() {
     }
 
     /** 通知不需要每一下心跳都刷，1 秒一次、并且数值变了才刷。 */
+    /** Live Updates 通道（Android 16+）：独立一条岛通知，带「断开/录制」动作 */
+    private fun publishLiveIsland() {
+        if (!IslandSettings.heartEnabled) {
+            IslandPublish.cancel(this, IslandPublish.heartId())
+            return
+        }
+        val connected = state.link == HrLink.READY && state.bpm > 0
+        if (!connected && IslandSettings.heartDropIslandOnLost) {
+            IslandPublish.cancel(this, IslandPublish.heartId())
+            return
+        }
+        val left = if (recActive) "● " + IslandPublish.clock(recElapsedSec()) else "心率"
+        val right = if (state.bpm > 0) state.bpm.toString() + " bpm" else "--"
+        // 展开面板的副标题就是设备名，信号强度只在设置里打开时补在后面
+        val content = state.deviceName.ifEmpty { "心率广播" } +
+            if (IslandSettings.heartShowSignal && state.rssi != 0) " · 信号 " + state.rssi + " dBm" else ""
+        val acts = ArrayList<Pair<String, android.app.PendingIntent>>()
+        acts += "断开" to android.app.PendingIntent.getService(
+            this,
+            6,
+            android.content.Intent(this, HeartRateService::class.java).setAction(ACTION_DISCONNECT),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
+        if (IslandSettings.heartRecordButton) {
+            acts += (if (recActive) "停止录制" else "开始录制") to android.app.PendingIntent.getService(
+                this,
+                5,
+                android.content.Intent(this, HeartRateService::class.java).setAction(ACTION_TOGGLE_RECORD),
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+        IslandPublish.post(
+            context = this,
+            id = IslandPublish.heartId(),
+            title = right,
+            content = content,
+            leftText = left,
+            rightText = right,
+            progressPct = 0,
+            heart = true,
+            actions = acts,
+            // 与 V3 通道取值保持一致：温度优先时把心率岛排到后面
+            order = if (IslandSettings.tempPriority) 1 else 0,
+            priority = if (IslandSettings.tempPriority) 1 else 2,
+            // 走统一构造函数：requestCode 也换个新的，避免复用旧版本留下的 PendingIntent（flags 是创建时定死的）
+            contentIntent = IslandPublish.intentFor(this, HeartRateActivity::class.java, requestCode = 31),
+        )
+    }
+
+    /** V3 通道：澎湃 3 上 HeartRateService 的常驻通知不会上岛，另发一条焦点通知 */
+    private fun publishV3Island() {
+        if (!IslandSettings.heartEnabled) {
+            v3IslandId?.let { IslandV3.dismiss(this, it) }
+            v3IslandId = null
+            v3Seq = 0
+            return
+        }
+        val connected = state.link == HrLink.READY && state.bpm > 0
+        if (!connected && IslandSettings.heartDropIslandOnLost) {
+            v3IslandId?.let { IslandV3.dismiss(this, it) }
+            v3IslandId = null
+            v3Seq = 0
+            return
+        }
+        val first = v3IslandId == null
+        v3Seq += 1
+        val sid = v3IslandId ?: IslandV3.newSessionId().also { v3IslandId = it }
+        val left = if (recActive) "● " + IslandPublish.clock(recElapsedSec()) else "心率"
+        val right = if (state.bpm > 0) state.bpm.toString() + " bpm" else "--"
+        val content = state.deviceName.ifEmpty { "心率广播" } +
+            if (IslandSettings.heartShowSignal && state.rssi != 0) " · 信号 " + state.rssi + " dBm" else ""
+        IslandV3.publish(
+            context = this,
+            sessionId = sid,
+            title = right,
+            content = content,
+            leftText = left,
+            rightText = right,
+            heart = true,
+            picKey = IslandPublish.PIC_HEART,
+            sequence = v3Seq,
+            // 首帧必须带 enableFloat，否则 V3 通道整条岛都不出（后续帧不能再带，会反复展开）
+            firstFrame = first,
+            order = if (IslandSettings.tempPriority) 1 else 0,
+            priority = if (IslandSettings.tempPriority) 1 else 2,
+            actions = emptyList(),
+        )
+    }
+
     private fun refreshNotification() {
+        // V3 通道独立于前台通知，先按设置重发/撤销岛
+        if (IslandSettings.mode == "v3" || (IslandSettings.mode == "auto" && !IslandPublish.liveUpdatesSupported())) {
+            IslandPublish.cancel(this, IslandPublish.heartId())
+            publishV3Island()
+        } else {
+            publishLiveIsland()
+        }
         if (!notificationShown) return
         val now = System.currentTimeMillis()
         if (state.bpm == lastNotifiedBpm && now - lastNotifiedAt < 1000L) return

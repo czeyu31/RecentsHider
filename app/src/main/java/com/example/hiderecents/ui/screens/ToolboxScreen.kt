@@ -3,6 +3,7 @@ package com.example.hiderecents.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,6 +44,8 @@ data class ToolboxTool(
     val meta: String,
     val icon: DshIconKind,
     val onClick: () -> Unit,
+    /** 半宽卡片里强制正方形（心率广播 / 超级岛这一对） */
+    val square: Boolean = false,
 )
 
 /** 半宽卡片的最小高度：保证同一行两张卡等高，且不依赖 intrinsic 测量 */
@@ -225,8 +228,14 @@ private fun ToolTile(
                 },
             )
             .dshClickable(scaleOnPress = true, onClick = tool.onClick)
-            // 只有石墨需要锁高对齐；纸本原本就是按内容撑高，加最小高度反而多余
-            .heightIn(min = if (wide || !surface.hasPanels) 0.dp else HalfTileMinHeight)
+            .then(
+                if (!wide && tool.square) {
+                    Modifier.aspectRatio(1f)
+                } else {
+                    // 只有石墨需要锁高对齐；纸本原本就是按内容撑高，加最小高度反而多余
+                    Modifier.heightIn(min = if (wide || !surface.hasPanels) 0.dp else HalfTileMinHeight)
+                },
+            )
             .padding(
                 start = if (surface.hasPanels) 16.dp else if (leftRule) 18.dp else 0.dp,
                 top = 16.dp,

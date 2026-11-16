@@ -33,6 +33,8 @@ data class TempZone(
  */
 object TempSensor {
 
+    private const val DS_CMD = "dumpsys thermalservice"
+
     private const val CMD =
         "for z in /sys/class/thermal/thermal_zone*; do " +
             "t=\$(cat \"\$z/type\" 2>/dev/null); " +
@@ -40,11 +42,81 @@ object TempSensor {
             "if [ -n \"\$t\" ] && [ -n \"\$v\" ]; then echo \"\$t|\$v\"; fi; done"
 
     /** 全量热区：已按「大核 → 小核 → 电池 → GPU → 集群 → 其他」排好序，同 label 只留最高温那条。 */
-    fun readZones(): List<TempZone> {
+    fun readZones(): List<TempZone> = readZones(allowShell = true)
+
+    /**
+     * allowShell=false 时只读文件、不碰 Shizuku。
+     *
+     * 为什么要这个开关：本机 /sys/class/thermal 对应用 UID 不可读，只能走 shell；
+     * 而用户服务没起来时每次 exec 都会新起一个 shell 进程，每秒一次会拖慢 Shizuku
+     * 绑定用户服务（表现为首页长时间「连接中」）。采样器因此把 shell 读取限流。
+     */
+    fun readZones(allowShell: Boolean): List<TempZone> {
         val direct = dedupeAndSort(readZonesDirect())
-        if (direct.isNotEmpty()) return direct
+        if (direct.isNotEmpty() || !allowShell) return direct
+        // 有些 ROM 把 /sys/class/thermal 连同 shell 一起挡掉（prague 实测），
+        // 但 HAL 的读数还挂在 dumpsys thermalservice 上，这条路能拿到逐区温度。
+        val hal = dedupeAndSort(readZonesFromThermalService())
+        if (hal.isNotEmpty()) return hal
         return dedupeAndSort(readZonesViaShell())
     }
+
+    /**
+     * 走 `dumpsys thermalservice` 解析 HAL 上报的热区。
+     *
+     * 输出形如：Temperature{mValue=40.374, mType=0, mName=CPU, mStatus=0}
+     * 优先取 "Current temperatures from HAL"，为空再退到 "Cached temperatures"。
+     */
+    private fun readZonesFromThermalService(): List<TempZone> {
+        val (ok, out) = ShizukuShell.exec(DS_CMD)
+        if (!ok || out.isBlank()) return emptyList()
+        val halLines = section(out, "Current temperatures from HAL:")
+        val lines = if (halLines.isNotEmpty()) halLines else section(out, "Cached temperatures:")
+        return lines.mapNotNull { line ->
+            val m = HAL_PATTERN.find(line) ?: return@mapNotNull null
+            val value = m.groupValues[1].toFloatOrNull() ?: return@mapNotNull null
+            val name = m.groupValues[3]
+            if (value < 5f || value > 120f) return@mapNotNull null
+            TempZone(
+                key = name.lowercase(Locale.US),
+                label = labelOfHal(name),
+                sub = name.lowercase(Locale.US),
+                celsius = value,
+            )
+        }
+    }
+
+    /** 取某个标题段之后的非空行，遇新标题（不含温度行）即停。 */
+    private fun section(text: String, title: String): List<String> {
+        val lines = text.lines()
+        val start = lines.indexOfFirst { it.contains(title) }
+        if (start < 0) return emptyList()
+        val out = ArrayList<String>()
+        for (i in start + 1 until lines.size) {
+            val line = lines[i]
+            if (line.contains("Temperature{")) {
+                out += line
+            } else if (line.trim().isEmpty() || !line.startsWith("\t")) {
+                break
+            }
+        }
+        return out
+    }
+
+    private val HAL_PATTERN =
+        Regex("""Temperature\{mValue=([-0-9.]+), mType=(\d+), mName=([A-Z_]+), mStatus=(-?\d+)\}""")
+
+    private fun labelOfHal(name: String): String = when (name) {
+        "CPU" -> "CPU"
+        "GPU" -> "GPU"
+        "NPU", "TPU" -> "NPU"
+        "SOC" -> "SoC"
+        "BATTERY" -> "电池"
+        "SKIN" -> "外壳"
+        "POWER_AMPLIFIER" -> "功放"
+        else -> name.lowercase(Locale.US)
+    }
+
 
     /**
      * 直接读文件。
@@ -103,7 +175,7 @@ object TempSensor {
     /** 当前显示用的 4 个关键热区；不足 4 个就有几个给几个。 */
     fun keyZones(context: Context): List<TempZone> {
         val zones = readZones()
-        if (zones.size >= 2) return zones.take(4)
+        if (zones.size >= 2) return zones.take(6)
         val battery = readBattery(context)
         if (battery != null && zones.none { it.label == "电池" }) {
             return zones + TempZone("bms", "电池", "bms", battery)
@@ -133,16 +205,21 @@ object TempSensor {
         t.contains("batt") || t.contains("bms") -> "电池"
         t.contains("gpu") || t.contains("kgsl") -> "GPU"
         t.contains("skin") || t.contains("shell") || t.contains("quiet") -> "外壳"
-        else -> "其他"
+        // 没命中规则就用原始节点名当标签：换机型时宁可显示 apc / board_therm，
+        // 也不要并成「其他」再被列表截掉
+        else -> t
     }
 
     private fun rankOf(z: TempZone): Int = when (z.label) {
-        "CPU 大核" -> 1
+        "CPU 大核", "CPU" -> 1
         "CPU 小核" -> 2
         "电池" -> 3
         "GPU" -> 4
-        "CPU 集群" -> 5
-        "外壳" -> 6
-        else -> 9
+        "NPU" -> 5
+        "SoC" -> 6
+        "外壳" -> 7
+        "功放" -> 8
+        "CPU 集群" -> 9
+        else -> 20
     }
 }

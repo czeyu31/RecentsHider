@@ -120,6 +120,8 @@ fun HeartRateHistoryScreen(
             )
 
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                // 注意：这里不能用 return@Column 提前退出 —— 当前 Compose 版本对
+                // 可重启 lambda 里的提前 return 会打空分组栈，直接 Stack.pop 崩溃。
                 if (items.isEmpty()) {
                     Spacer(Modifier.height(96.dp))
                     Text("还没有录制过心率", style = type.h2, color = colors.inkMuted)
@@ -129,9 +131,7 @@ fun HeartRateHistoryScreen(
                         style = type.caption,
                         color = colors.inkFaint,
                     )
-                    return@Column
-                }
-
+                } else {
                 Spacer(Modifier.height(if (surface.hasPanels) 12.dp else 18.dp))
 
                 // 近 7 天概览
@@ -182,6 +182,7 @@ fun HeartRateHistoryScreen(
                     color = colors.inkFaint,
                 )
                 Spacer(Modifier.height(16.dp))
+                }
             }
         }
     }

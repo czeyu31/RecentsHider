@@ -19,6 +19,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.BIND_QUICK_SETTINGS_TILE" />
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
@@ -164,6 +165,14 @@
 
         <activity
             android:name=".TempActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".IslandActivity"
+            android:exported="false" />
+
+        <receiver
+            android:name=".island.IslandReceiver"
             android:exported="false" />
 
         <service

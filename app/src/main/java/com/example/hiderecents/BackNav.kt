@@ -40,6 +40,19 @@ open class DshActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         onBackPressedDispatcher.addCallback(this, backCallback)
+        requestHighRefreshRate()
+    }
+
+    /**
+     * 申请 120Hz。
+     *
+     * 页面动画按窗口的刷新节拍走，不主动申请时系统多数时候给 60Hz，翻页就会看着一顿一顿。
+     */
+    @Suppress("DEPRECATION")
+    private fun requestHighRefreshRate() {
+        runCatching {
+            window.attributes = window.attributes.apply { preferredRefreshRate = 120f }
+        }
     }
 
     protected open fun onDshBackPressed() {

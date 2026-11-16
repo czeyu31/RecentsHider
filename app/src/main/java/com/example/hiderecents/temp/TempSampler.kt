@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.example.hiderecents.island.ThermalIsland
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,7 +27,13 @@ object TempSampler {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val started = AtomicBoolean(false)
+    private var appContext: Context? = null
     private val rings = HashMap<String, MutableList<Float>>()
+    private var lastZones: List<TempZone> = emptyList()
+    private var lastShellAt = 0L
+
+    /** 走 shell 读热区的最小间隔（毫秒）*/
+    private const val SHELL_INTERVAL_MS = 10_000L
 
     var zones by mutableStateOf<List<TempZone>>(emptyList())
         private set
@@ -62,13 +69,42 @@ object TempSampler {
     fun ensureRunning(context: Context) {
         if (!started.compareAndSet(false, true)) return
         val app = context.applicationContext
+        appContext = app
         scope.launch {
             while (isActive) {
                 val t0 = System.currentTimeMillis()
-                val z = TempSensor.keyZones(app)
-                val head = TempSensor.headOf(z)
-                    ?: TempSensor.readBattery(app)?.let { TempZone("bms", "电池", "bms", it) }
+                val now = System.currentTimeMillis()
+                // shell 读取限流：本机只能靠 shell 拿热区，而每秒 exec 会新起进程、
+                // 拖慢 Shizuku 绑定用户服务；没到间隔就沿用上一轮的热区，只更新电池温度。
+                val allowShell = now - lastShellAt >= SHELL_INTERVAL_MS
+                var z = TempSensor.readZones(allowShell = allowShell)
+                if (z.isNotEmpty() && allowShell) lastShellAt = now
+                if (z.isEmpty()) z = lastZones
+                val battery = TempSensor.readBattery(app)
+                var head = TempSensor.headOf(z)
+                if (battery != null) {
+                    if (z.isEmpty()) {
+                        z = listOf(TempZone("bms", "电池", "bms", battery))
+                    } else if (z.any { it.label == "电池" }) {
+                        z = z.map { if (it.label == "电池") it.copy(celsius = battery) else it }
+                    } else {
+                        z = z + TempZone("bms", "电池", "bms", battery)
+                    }
+                    head = TempSensor.headOf(z)
+                }
+                lastZones = z
                 sample(z, head)
+                appContext?.let { ctx ->
+                    ThermalIsland.onSample(
+                        context = ctx,
+                        zones = z,
+                        series = series,
+                        recording = recording,
+                        recSeconds = if (recording) {
+                            ((System.currentTimeMillis() - recStartedAt) / 1000L).toInt()
+                        } else 0,
+                    )
+                }
                 val cost = System.currentTimeMillis() - t0
                 delay((intervalMs - cost).coerceAtLeast(200L))
             }
@@ -82,7 +118,8 @@ object TempSampler {
             readingError = "读不到热区读数"
             return
         }
-        readingError = ""
+        // 只有电池一条时把原因写出来：本机既没开放 sysfs 热区，也拿不到 thermalservice
+        readingError = if (z.size <= 1) "本机未开放热区节点，仅显示电池温度（授权 Shizuku 可尝试读更多）" else ""
         z.forEach { zone ->
             val ring = rings.getOrPut(zone.label) { ArrayList(120) }
             ring.add(round1(zone.celsius))

@@ -53,6 +53,9 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "SystemTool"
         private const val REQ_NOTIFICATION = 2001
         private const val PREFS = "hide_recents_prefs"
+        /** 用户服务绑不上时的重试节奏：首次启动常要几十秒 */
+        private const val BIND_RETRY_MS = 8_000L
+        private const val MAX_BIND_RETRY = 15
     }
 
     private lateinit var prefs: SharedPreferences
@@ -81,6 +84,8 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
             taskHideService = service
             serviceReady = true
+            bindRetry = 0
+            handler.removeCallbacks(bindRetryTick)
             Log.d(TAG, "Shizuku service connected")
             refreshState()
             autoGrantAllPermissions()
@@ -91,6 +96,24 @@ class MainActivity : AppCompatActivity() {
             serviceReady = false
             refreshState()
         }
+    }
+
+    private var bindRetry = 0
+
+    private val bindRetryTick = object : Runnable {
+        override fun run() {
+            if (serviceReady || !shizukuPermissionGranted) return
+            if (bindRetry >= MAX_BIND_RETRY) return
+            bindRetry += 1
+            Log.d(TAG, "retry bind user service #" + bindRetry)
+            bindShizukuService()
+        }
+    }
+
+    private fun scheduleBindRetry() {
+        if (serviceReady) return
+        handler.removeCallbacks(bindRetryTick)
+        handler.postDelayed(bindRetryTick, BIND_RETRY_MS)
     }
 
     private val shizukuPermissionResultListener =
@@ -280,14 +303,14 @@ class MainActivity : AppCompatActivity() {
                 statusDetail = "Shizuku 正在运行，本应用还没有获得授权"
             }
 
-            !serviceReady && shellFallback -> {
-                statusText = "兼容模式"
-                statusDetail = "当前 Shizuku 起不了后台服务，命令类功能可用；隐藏/恢复请换回官方 Shizuku"
-            }
-
             !serviceReady -> {
                 statusText = "连接中"
-                statusDetail = "Shizuku 已授权，正在绑定后台服务进程"
+                statusDetail = if (shellFallback) {
+                    // 命令通道已通，只是用户服务还在拉起：不再单独叫「兼容模式」，免得看起来像降级
+                    "后台服务启动中，命令类功能已可用；隐藏/恢复要等服务进程就绪"
+                } else {
+                    "Shizuku 已授权，正在绑定后台服务进程（首次启动可能要几十秒）"
+                }
             }
 
             else -> {
@@ -414,6 +437,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindShizukuService() {
+        scheduleBindRetry()
         try {
             Shizuku.bindUserService(
                 Shizuku.UserServiceArgs(ComponentName(this, TaskHideService::class.java))

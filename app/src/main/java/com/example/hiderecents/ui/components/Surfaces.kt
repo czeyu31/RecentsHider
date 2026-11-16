@@ -48,7 +48,7 @@ import com.example.hiderecents.ui.theme.rememberMotionEnabled
 /** 自绘图标集：统一 24x24 坐标系、1.5dp 描边、圆头端点。不使用 Material 图标库默认形状。 */
 enum class DshIconKind {
     GEAR, GRID, SHIELD, CHEVRON, SEARCH, TERMINAL, BELL, PACKAGE, TRANSFER, MENU, ARROW_LEFT, ARROW_RIGHT,
-    FILE, IMAGE, CLIPBOARD, FOLDER, BACK, SLIDERS, HEART, THERMO, PLAY, STOP
+    FILE, IMAGE, CLIPBOARD, FOLDER, BACK, SLIDERS, HEART, THERMO, PLAY, STOP, ISLAND
 }
 
 /** 画布背景：主题底色的纵向渐变（纸本是纸面提亮到纸影，石墨是冷石墨到更深的底）。 */
@@ -192,6 +192,19 @@ fun DshIcon(
                 drawCircle(color = tint, radius = 2f * u, center = Offset(15f * u, 12f * u), style = stroke)
                 line(4f, 17f, 20f, 17f)
                 drawCircle(color = tint, radius = 2f * u, center = Offset(8f * u, 17f * u), style = stroke)
+            }
+
+            DshIconKind.ISLAND -> {
+                // 岛：一个胶囊 + 中间小点，和系统上的島形态一致
+                drawRoundRect(
+                    color = tint,
+                    topLeft = Offset(3.5f * u, 8.5f * u),
+                    size = Size(17f * u, 7f * u),
+                    cornerRadius = CornerRadius(3.5f * u, 3.5f * u),
+                    style = stroke,
+                )
+                drawCircle(color = tint, radius = 1.3f * u, center = Offset(8f * u, 12f * u))
+                line(12.5f, 12f, 17f, 12f)
             }
 
             DshIconKind.THERMO -> {

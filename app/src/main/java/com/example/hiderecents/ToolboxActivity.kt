@@ -127,14 +127,23 @@ class ToolboxActivity : DshActivity() {
             icon = DshIconKind.TRANSFER,
             onClick = { open(FileTransferActivity::class.java) },
         ),
-        // 心率广播排在末尾：工具箱首项独占整行，末项独占整行，中间两列成对
-        // 这样「应用管理」和「文件传输」都还在原来的位置
+        // 心率广播与超级岛都排在末尾：两张正方形卡片一左一右
+        // 「应用管理」独占首行、中间两列成对，原有位置不变
         ToolboxTool(
             title = "心率广播",
             desc = "接收手环、手表的实时心率，按需录制并查看曲线",
             meta = "BLE · 本机保存",
             icon = DshIconKind.HEART,
             onClick = { open(HeartRateActivity::class.java) },
+            square = true,
+        ),
+        ToolboxTool(
+            title = "超级岛",
+            desc = "心率岛与温度岛，各自开关",
+            meta = "2 ISLANDS",
+            icon = DshIconKind.ISLAND,
+            onClick = { open(IslandActivity::class.java) },
+            square = true,
         ),
 
     )

@@ -142,9 +142,7 @@ fun TemperatureHistoryScreen(
                         style = type.caption,
                         color = colors.inkFaint,
                     )
-                    return@Column
-                }
-
+                } else {
                 Spacer(Modifier.height(if (surface.hasPanels) 12.dp else 18.dp))
 
                 val groups = items.groupBy { it.day }
@@ -203,6 +201,7 @@ fun TemperatureHistoryScreen(
                     color = colors.inkFaint,
                 )
                 Spacer(Modifier.height(20.dp))
+                }
             }
         }
     }
