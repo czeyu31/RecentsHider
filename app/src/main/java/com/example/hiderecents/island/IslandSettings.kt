@@ -6,7 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 /**
- * 超级岛设置（两个岛各自独立）。
+ * 原生岛设置（两个岛各自独立）。
  *
  * 全部落 prefs；字段用 mutableStateOf 包着，设置页改一下，发布逻辑下一拍就能读到新值。
  */

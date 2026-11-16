@@ -11,7 +11,7 @@ import com.example.hiderecents.R
 import java.util.Locale
 
 /**
- * 把内容贴到澎湃超级岛。
+ * 把内容贴到澎湃原生岛。
  *
  * 走的是系统认可的焦点通知：常驻 + 进度 + 静音，参数放在 `miui.focus.param`
  * （template_v2 + param_island）。胶囊里的左右两段分别由
@@ -82,8 +82,8 @@ object IslandPublish {
         val mgr = context.getSystemService(NotificationManager::class.java) ?: return
         if (mgr.getNotificationChannel(CHANNEL) != null) return
         mgr.createNotificationChannel(
-            NotificationChannel(CHANNEL, "超级岛", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "在澎湃超级岛上显示心率与温度"
+            NotificationChannel(CHANNEL, "原生岛", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "在澎湃原生岛上显示心率与温度"
                 setShowBadge(false)
                 setSound(null, null)
                 enableVibration(false)

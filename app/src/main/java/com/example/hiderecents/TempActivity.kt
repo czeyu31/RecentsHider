@@ -26,6 +26,7 @@ import com.example.hiderecents.ui.theme.AppTheme
 import com.example.hiderecents.ui.theme.DshTheme
 import com.example.hiderecents.ui.theme.applyDshSystemBars
 import kotlinx.coroutines.delay
+import com.example.hiderecents.ui.components.DshScreenEnter
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -72,70 +73,72 @@ class TempActivity : DshActivity() {
                     nowTick = System.currentTimeMillis()
                 }
 
-                when (screen) {
-                    Screen.LIVE -> {
-                        val sel = TempSampler.selectedZone ?: TempSampler.headLabel
-                        TemperatureScreen(
-                            head = TempSampler.currentSeries(sel).lastOrNull(),
-                            headLabel = sel,
-                            zones = TempSampler.zones.map {
-                                TempZoneRow(
-                                    label = it.label,
-                                    sub = it.sub,
-                                    value = it.celsius,
-                                    selected = it.label == TempSampler.selectedZone,
-                                )
+                DshScreenEnter(screenKey = screen) {
+                    when (screen) {
+                        Screen.LIVE -> {
+                            val sel = TempSampler.selectedZone ?: TempSampler.headLabel
+                            TemperatureScreen(
+                                head = TempSampler.currentSeries(sel).lastOrNull(),
+                                headLabel = sel,
+                                zones = TempSampler.zones.map {
+                                    TempZoneRow(
+                                        label = it.label,
+                                        sub = it.sub,
+                                        value = it.celsius,
+                                        selected = it.label == TempSampler.selectedZone,
+                                    )
+                                },
+                                live = TempSampler.currentSeries(sel),
+                                recording = TempSampler.recording,
+                                recTime = clockOf(
+                                    ((nowTick - TempSampler.recStartedAt) / 1000L).toInt().coerceAtLeast(0),
+                                ),
+                                intervalLabel = (TempSampler.intervalMs / 1000L).toString() + "s",
+                                sampleIntervalMs = TempSampler.intervalMs,
+                                onBack = { dshGoBack() },
+                                onOpenHistory = {
+                                sessions = TempStore.load(this).filter { it.values.isNotEmpty() }
+                                screen = Screen.HISTORY
                             },
-                            live = TempSampler.currentSeries(sel),
-                            recording = TempSampler.recording,
-                            recTime = clockOf(
-                                ((nowTick - TempSampler.recStartedAt) / 1000L).toInt().coerceAtLeast(0),
-                            ),
-                            intervalLabel = (TempSampler.intervalMs / 1000L).toString() + "s",
-                            sampleIntervalMs = TempSampler.intervalMs,
-                            onBack = { dshGoBack() },
-                            onOpenHistory = {
-                            sessions = TempStore.load(this).filter { it.values.isNotEmpty() }
-                            screen = Screen.HISTORY
-                        },
-                            onToggleRecording = { toggleRecording() },
-                            onCycleInterval = { cycleInterval() },
-                            onSelectZone = { label ->
-                                TempSampler.selectedZone =
-                                    if (TempSampler.selectedZone == label) null else label
-                            },
-                            statusLine = TempSampler.readingError,
-                            statusIsError = TempSampler.recording && TempSampler.recSamples == 0,
-                        )
-                    }
-
-                    Screen.HISTORY -> TemperatureHistoryScreen(
-                        items = sessions.map { it.toItem() },
-                        onBack = { screen = Screen.LIVE },
-                        onOpen = { id ->
-                            opened = sessions.firstOrNull { it.id == id }
-                            screen = Screen.REPLAY
-                        },
-                        onClearAll = {
-                            sessions = emptyList()
-                            opened = null
-                            TempStore.clear(this@TempActivity)
-                            screen = Screen.LIVE
-                        },
-                        onExportAll = { exportAll() },
-                    )
-
-                    Screen.REPLAY -> {
-                        val s = opened
-                        if (s == null) {
-                            LaunchedEffect(Unit) { screen = Screen.HISTORY }
-                        } else {
-                            TemperatureReplayScreen(
-                                session = s,
-                                onBack = { screen = Screen.HISTORY },
-                                onExport = { exportSession(s) },
-                                onDelete = { deleteSession(s.id) },
+                                onToggleRecording = { toggleRecording() },
+                                onCycleInterval = { cycleInterval() },
+                                onSelectZone = { label ->
+                                    TempSampler.selectedZone =
+                                        if (TempSampler.selectedZone == label) null else label
+                                },
+                                statusLine = TempSampler.readingError,
+                                statusIsError = TempSampler.recording && TempSampler.recSamples == 0,
                             )
+                        }
+
+                        Screen.HISTORY -> TemperatureHistoryScreen(
+                            items = sessions.map { it.toItem() },
+                            onBack = { screen = Screen.LIVE },
+                            onOpen = { id ->
+                                opened = sessions.firstOrNull { it.id == id }
+                                screen = Screen.REPLAY
+                            },
+                            onClearAll = {
+                                sessions = emptyList()
+                                opened = null
+                                TempStore.clear(this@TempActivity)
+                                screen = Screen.LIVE
+                            },
+                            onExportAll = { exportAll() },
+                        )
+
+                        Screen.REPLAY -> {
+                            val s = opened
+                            if (s == null) {
+                                LaunchedEffect(Unit) { screen = Screen.HISTORY }
+                            } else {
+                                TemperatureReplayScreen(
+                                    session = s,
+                                    onBack = { screen = Screen.HISTORY },
+                                    onExport = { exportSession(s) },
+                                    onDelete = { deleteSession(s.id) },
+                                )
+                            }
                         }
                     }
                 }

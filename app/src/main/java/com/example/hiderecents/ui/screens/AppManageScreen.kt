@@ -49,9 +49,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.hiderecents.ui.components.AppIconTile
+import com.example.hiderecents.ui.components.DshAnimatedDialog
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.DshIcon
@@ -610,15 +610,15 @@ fun AppActionSheet(
     val type = Dsh.type
     val dimens = Dsh.dimens
 
-    Dialog(
+    DshAnimatedDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
+    ) { close ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .dshClickable(scaleOnPress = false, haptic = false) { onDismiss() },
+                    .dshClickable(scaleOnPress = false, haptic = false) { close() },
             )
             Column(
                 Modifier
@@ -737,7 +737,7 @@ fun AppDetailDialog(
     val dimens = Dsh.dimens
     val surface = Dsh.surface
 
-    Dialog(onDismissRequest = onDismiss) {
+    DshAnimatedDialog(onDismissRequest = onDismiss, properties = DialogProperties()) { close ->
         Column(
             Modifier
                 .fillMaxWidth()
@@ -786,7 +786,7 @@ fun AppDetailDialog(
                     Modifier
                         .size(28.dp)
                         .clip(RoundedCornerShape(percent = 50))
-                        .dshClickable(scaleOnPress = false, onClick = onDismiss),
+                        .dshClickable(scaleOnPress = false, onClick = close),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text("×", style = type.rowTitle, color = colors.inkMuted)

@@ -127,7 +127,7 @@ class ToolboxActivity : DshActivity() {
             icon = DshIconKind.TRANSFER,
             onClick = { open(FileTransferActivity::class.java) },
         ),
-        // 心率广播与超级岛都排在末尾：两张正方形卡片一左一右
+        // 心率广播与原生岛都排在末尾：两张正方形卡片一左一右
         // 「应用管理」独占首行、中间两列成对，原有位置不变
         ToolboxTool(
             title = "心率广播",
@@ -138,7 +138,7 @@ class ToolboxActivity : DshActivity() {
             square = true,
         ),
         ToolboxTool(
-            title = "超级岛",
+            title = "原生岛",
             desc = "心率岛与温度岛，各自开关",
             meta = "2 ISLANDS",
             icon = DshIconKind.ISLAND,

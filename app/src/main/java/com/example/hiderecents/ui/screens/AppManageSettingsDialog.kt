@@ -18,7 +18,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.example.hiderecents.ui.components.DshAnimatedDialog
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.DshSwitch
@@ -42,7 +43,7 @@ fun AppManageSettingsDialog(
     val dimens = Dsh.dimens
     val shape = RoundedCornerShape(dimens.panelRadius)
 
-    Dialog(onDismissRequest = onDismiss) {
+    DshAnimatedDialog(onDismissRequest = onDismiss, properties = DialogProperties()) { close ->
         Column(
             Modifier
                 .fillMaxWidth()
@@ -58,7 +59,7 @@ fun AppManageSettingsDialog(
                     Modifier
                         .size(28.dp)
                         .clip(RoundedCornerShape(dimens.iconRadius))
-                        .dshClickable(scaleOnPress = false, onClick = onDismiss),
+                        .dshClickable(scaleOnPress = false, onClick = close),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text("×", style = type.rowTitle, color = colors.inkMuted)

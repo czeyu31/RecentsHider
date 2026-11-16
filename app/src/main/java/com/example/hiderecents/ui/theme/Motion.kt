@@ -2,6 +2,7 @@ package com.example.hiderecents.ui.theme
 
 import android.provider.Settings
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -84,6 +85,59 @@ object MotionSpecs {
 
     fun color(m: DshMotion, enabled: Boolean): AnimationSpec<Color> =
         tween(durationMillis = if (enabled) m.themeFadeMillis else 0)
+}
+
+/**
+ * 缓动曲线与时长。
+ *
+ * 两套主题共用这一套：这里表达的是「东西怎么进出」，与材质无关。
+ * 三档语义按出现/消失/移动区分，不再逐个组件各调一个时长：
+ * - 消失（弹窗关闭、提示消失）：ease-in，最短，收得干脆
+ * - 出现（弹窗出现、抽屉滑入、卡片进场）：ease-out，稍长，落得稳
+ * - 移动（页内位移、展开收起、页面切换）：ease-in-out，最长，两头都缓
+ */
+object MotionEase {
+
+    /** CSS ease-in：起步慢、收尾快 —— 用于「离开」 */
+    val In = CubicBezierEasing(0.42f, 0f, 1f, 1f)
+
+    /** CSS ease-out：起步快、收尾慢 —— 用于「进入」 */
+    val Out = CubicBezierEasing(0f, 0f, 0.58f, 1f)
+
+    /** CSS ease-in-out：两头缓 —— 用于「移动」 */
+    val InOut = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
+
+    const val DUR_EXIT = 150
+    const val DUR_ENTER = 250
+    const val DUR_MOVE = 300
+
+    /** 主题切换：圆形遮罩扩散/收回 */
+    const val DUR_THEME_REVEAL = 500
+
+    private fun dur(millis: Int, enabled: Boolean) =
+        if (enabled) millis else MotionSpecs.REDUCED_MILLIS
+
+    fun <T> enter(enabled: Boolean = true): AnimationSpec<T> =
+        tween(durationMillis = dur(DUR_ENTER, enabled), easing = Out)
+
+    fun <T> exit(enabled: Boolean = true): AnimationSpec<T> =
+        tween(durationMillis = dur(DUR_EXIT, enabled), easing = In)
+
+    fun <T> move(enabled: Boolean = true): AnimationSpec<T> =
+        tween(durationMillis = dur(DUR_MOVE, enabled), easing = InOut)
+
+    /** 逐个错开：同一段移动，但每个元素晚 delayMillis 起步 */
+    fun <T> spread(enabled: Boolean = true, delayMillis: Int): AnimationSpec<T> = tween(
+        durationMillis = dur(DUR_MOVE, enabled),
+        delayMillis = if (enabled) delayMillis else 0,
+        easing = InOut,
+    )
+
+    /** 逐级散开：每个元素之间的间隔 */
+    const val SPREAD_STEP_MS = 40
+
+    /** 复制反馈：对勾保持多久后复原 */
+    const val COPY_HOLD_MS = 1000L
 }
 
 /**

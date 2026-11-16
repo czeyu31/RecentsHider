@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CSS ease-in：cubic-bezier(0.42, 0, 1, 1)。用于「关闭 / 消失」 -->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:pathData="M0,0 C0.42,0 1,1 1,1" />

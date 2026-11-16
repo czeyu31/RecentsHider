@@ -1,5 +1,6 @@
 package com.example.hiderecents.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -18,17 +20,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.hiderecents.ui.components.paperHeaderRule
@@ -48,9 +56,93 @@ import com.example.hiderecents.ui.components.StaggeredEnter
 import com.example.hiderecents.ui.components.dshCanvasBackground
 import com.example.hiderecents.ui.components.dshClickable
 import com.example.hiderecents.ui.theme.Dsh
+import com.example.hiderecents.ui.theme.MotionEase
+import com.example.hiderecents.ui.theme.rememberMotionEnabled
+import kotlin.math.roundToInt
 
 /** 已隐藏应用的预览项（首字 + 配色种子） */
 data class HiddenPreview(val label: String, val seed: Int)
+
+/** 头像组里的一个位置；more = true 表示「+N」占位 */
+private data class AvatarSlot(val label: String, val seed: Int, val more: Boolean)
+
+/**
+ * 已隐藏应用头像组。
+ *
+ * 收起时依次叠压（每个压住前一个的三分之一），最多 5 位，超出的收成末位「+N」；
+ * 点一下自左向右依次散开成一排，再点一下自右向左收回。
+ * 散开只按「头像 + 固定间距」排，不铺满整行——只有两个应用时也该靠在一起。
+ */
+@Composable
+private fun HiddenAvatarGroup(
+    preview: List<HiddenPreview>,
+    total: Int,
+    modifier: Modifier = Modifier,
+) {
+    val colors = Dsh.colors
+    val type = Dsh.type
+    val dimens = Dsh.dimens
+    val motionEnabled = rememberMotionEnabled()
+    val density = LocalDensity.current
+
+    var expanded by remember { mutableStateOf(false) }
+
+    val slots = remember(preview, total) {
+        val head = preview.take(5)
+        val rest = total - head.size
+        when {
+            head.isEmpty() -> emptyList()
+            rest > 0 -> head.dropLast(1).map { AvatarSlot(it.label, it.seed, false) } +
+                AvatarSlot("+$rest", 0, true)
+            else -> head.map { AvatarSlot(it.label, it.seed, false) }
+        }
+    }
+
+    val tile = 30.dp
+    val tilePx = with(density) { tile.toPx() }
+    val gapPx = with(density) { 8.dp.toPx() }
+
+    val count = slots.size
+    val collapsedStep = tilePx * 2f / 3f
+    val expandedStep = tilePx + gapPx
+
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(tile)
+            .dshClickable(scaleOnPress = false) { expanded = !expanded },
+    ) {
+        slots.forEachIndexed { index, slot ->
+            val target = if (expanded) index * expandedStep else index * collapsedStep
+            val delay = if (expanded) {
+                index * MotionEase.SPREAD_STEP_MS
+            } else {
+                (count - 1 - index) * MotionEase.SPREAD_STEP_MS
+            }
+            val x by animateFloatAsState(
+                targetValue = target,
+                animationSpec = MotionEase.spread(motionEnabled, delay),
+                label = "avatarX$index",
+            )
+
+            Box(Modifier.offset { IntOffset(x.roundToInt(), 0) }) {
+                if (slot.more) {
+                    Box(
+                        Modifier
+                            .size(tile)
+                            .clip(RoundedCornerShape(dimens.iconRadius))
+                            .border(1.dp, colors.hairline, RoundedCornerShape(dimens.iconRadius)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(slot.label, style = type.monoSmall, color = colors.inkFaint)
+                    }
+                } else {
+                    AppIconTile(label = slot.label, seed = slot.seed, tileSize = tile)
+                }
+            }
+        }
+    }
+}
 
 data class HomeUiState(
     val statusText: String = "未运行",
@@ -294,27 +386,11 @@ fun HomeScreen(
             // 已隐藏应用图标行（空态给一行占位，避免版面塌掉）
             StaggeredEnter(index = 2) {
                 if (state.hiddenPreview.isNotEmpty()) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = if (surface.hasPanels) 14.dp else 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
-                    ) {
-                        for (item in state.hiddenPreview.take(8)) {
-                            AppIconTile(label = item.label, seed = item.seed, tileSize = 30.dp)
-                        }
-                        val rest = state.hiddenCount - state.hiddenPreview.take(8).size
-                        if (rest > 0) {
-                            Box(
-                                Modifier
-                                    .size(30.dp)
-                                    .clip(RoundedCornerShape(Dsh.dimens.iconRadius))
-                                    .border(1.dp, colors.hairline, RoundedCornerShape(Dsh.dimens.iconRadius)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text("+$rest", style = type.monoSmall, color = colors.inkFaint)
-                            }
-                        }
-                    }
+                    HiddenAvatarGroup(
+                        preview = state.hiddenPreview,
+                        total = state.hiddenCount,
+                        modifier = Modifier.padding(top = if (surface.hasPanels) 14.dp else 6.dp),
+                    )
                 } else {
                     Text(
                         text = "还没有隐藏任何应用 · 在应用管理里选择",

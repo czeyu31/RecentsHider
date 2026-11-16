@@ -24,9 +24,26 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.hiderecents.BuildConfig
+import com.example.hiderecents.ui.theme.MotionEase
+import com.example.hiderecents.ui.theme.rememberMotionEnabled
+import kotlin.math.roundToInt
+import com.example.hiderecents.ui.components.DshAnimatedDialog
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.DshIcon
@@ -56,7 +73,10 @@ fun SettingsDialog(
     val colors = Dsh.colors
     val type = Dsh.type
 
-    Dialog(onDismissRequest = onDismiss) {
+    DshAnimatedDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(),
+    ) { close ->
         Box(
             Modifier
                 .fillMaxWidth()
@@ -81,7 +101,7 @@ fun SettingsDialog(
                                     Modifier
                                 },
                             )
-                            .dshClickable(onClick = onDismiss),
+                            .dshClickable(onClick = close),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text("×", style = type.rowTitle, color = colors.inkMuted)
@@ -92,23 +112,26 @@ fun SettingsDialog(
                 SectionHeader("外观")
                 Spacer(Modifier.height(10.dp))
 
-                ThemeOption(
-                    label = "跟随系统",
-                    desc = "浅色用纸本，深色用石墨",
-                    selected = theme == AppTheme.SYSTEM,
-                    onClick = { onThemeChange(AppTheme.SYSTEM) },
-                )
-                ThemeOption(
-                    label = "纸本",
-                    desc = "暖米白纸面，墨黑正文，朱红强调",
-                    selected = theme == AppTheme.PAPER,
-                    onClick = { onThemeChange(AppTheme.PAPER) },
-                )
-                ThemeOption(
-                    label = "石墨 · 雾玉",
-                    desc = "冷石墨软面板，雾玉绿强调",
-                    selected = theme == AppTheme.GRAPHITE,
-                    onClick = { onThemeChange(AppTheme.GRAPHITE) },
+                OptionGroup(
+                    options = listOf(
+                        OptionSpec("跟随系统", "浅色用纸本，深色用石墨"),
+                        OptionSpec("纸本", "暖米白纸面，墨黑正文，朱红强调"),
+                        OptionSpec("石墨 · 雾玉", "冷石墨软面板，雾玉绿强调"),
+                    ),
+                    selectedIndex = when (theme) {
+                        AppTheme.SYSTEM -> 0
+                        AppTheme.PAPER -> 1
+                        AppTheme.GRAPHITE -> 2
+                    },
+                    onSelect = { index ->
+                        onThemeChange(
+                            when (index) {
+                                0 -> AppTheme.SYSTEM
+                                1 -> AppTheme.PAPER
+                                else -> AppTheme.GRAPHITE
+                            },
+                        )
+                    },
                 )
 
                 Spacer(Modifier.height(22.dp))
@@ -140,17 +163,13 @@ fun SettingsDialog(
                 SectionHeader("隐藏策略")
                 Spacer(Modifier.height(10.dp))
 
-                ThemeOption(
-                    label = "持续守护",
-                    desc = "重新打开被隐藏的应用，也会在数秒内从最近任务消失",
-                    selected = hideGuard,
-                    onClick = { onHideGuardChange(true) },
-                )
-                ThemeOption(
-                    label = "仅一次生效",
-                    desc = "只在打开开关那一刻隐藏当前任务，之后不再干预",
-                    selected = !hideGuard,
-                    onClick = { onHideGuardChange(false) },
+                OptionGroup(
+                    options = listOf(
+                        OptionSpec("持续守护", "重新打开被隐藏的应用，也会在数秒内从最近任务消失"),
+                        OptionSpec("仅一次生效", "只在打开开关那一刻隐藏当前任务，之后不再干预"),
+                    ),
+                    selectedIndex = if (hideGuard) 0 else 1,
+                    onSelect = { index -> onHideGuardChange(index == 0) },
                 )
 
                 Spacer(Modifier.height(20.dp))
@@ -166,8 +185,75 @@ fun SettingsDialog(
     }
 }
 
+private data class OptionSpec(val label: String, val desc: String)
+
+/**
+ * 一组单选。
+ *
+ * 选中态的两处高光都不再瞬切：纸本左侧那条红线由一条共享指示条平移并伸缩过去，
+ * 石墨则是行底色与描边淡入。单选圆点本身也带缩放，选中/取消都看得见过程。
+ */
 @Composable
-private fun ThemeOption(
+private fun OptionGroup(
+    options: List<OptionSpec>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+) {
+    val colors = Dsh.colors
+    val hasPanels = Dsh.surface.hasPanels
+    val motionEnabled = rememberMotionEnabled()
+    val density = LocalDensity.current
+
+    val tops = remember { mutableStateListOf<Float>() }
+    val heights = remember { mutableStateListOf<Float>() }
+
+    val targetTop = tops.getOrElse(selectedIndex) { 0f }
+    val targetHeight = heights.getOrElse(selectedIndex) { 0f }
+    val lineTop by animateFloatAsState(targetTop, MotionEase.move(motionEnabled), label = "optionLineTop")
+    val lineHeight by animateFloatAsState(targetHeight, MotionEase.move(motionEnabled), label = "optionLineHeight")
+
+    Box(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth()) {
+            options.forEachIndexed { index, option ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { coords ->
+                            val y = coords.positionInParent().y
+                            val h = coords.size.height.toFloat()
+                            if (tops.size > index) {
+                                if (tops[index] != y) tops[index] = y
+                                if (heights[index] != h) heights[index] = h
+                            } else {
+                                tops.add(y)
+                                heights.add(h)
+                            }
+                        },
+                ) {
+                    OptionRow(
+                        label = option.label,
+                        desc = option.desc,
+                        selected = index == selectedIndex,
+                        onClick = { onSelect(index) },
+                    )
+                }
+            }
+        }
+
+        if (!hasPanels && lineHeight > 0.5f) {
+            Box(
+                Modifier
+                    .offset { IntOffset(0, lineTop.roundToInt()) }
+                    .width(2.dp)
+                    .height(with(density) { lineHeight.toDp() })
+                    .background(color = colors.accent),
+            )
+        }
+    }
+}
+
+@Composable
+private fun OptionRow(
     label: String,
     desc: String,
     selected: Boolean,
@@ -175,9 +261,31 @@ private fun ThemeOption(
 ) {
     val colors = Dsh.colors
     val type = Dsh.type
+    val motionEnabled = rememberMotionEnabled()
     val shape = RoundedCornerShape(Dsh.dimens.controlRadius)
 
     val hasPanels = Dsh.surface.hasPanels
+
+    val fill by animateColorAsState(
+        targetValue = if (selected && hasPanels) colors.accentDim else Color.Transparent,
+        animationSpec = MotionEase.move(motionEnabled),
+        label = "optionFill",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (selected && hasPanels) colors.accentBorder else colors.hairline,
+        animationSpec = MotionEase.move(motionEnabled),
+        label = "optionBorder",
+    )
+    val dotScale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = MotionEase.move(motionEnabled),
+        label = "optionDotScale",
+    )
+    val ringColor by animateColorAsState(
+        targetValue = if (selected) colors.accent else colors.hairlineStrong,
+        animationSpec = MotionEase.move(motionEnabled),
+        label = "optionRing",
+    )
 
     Box(
         Modifier
@@ -187,8 +295,8 @@ private fun ThemeOption(
                 if (hasPanels) {
                     Modifier
                         .clip(shape)
-                        .background(color = if (selected) colors.accentDim else Color.Transparent)
-                        .border(1.dp, if (selected) colors.accentBorder else colors.hairline, shape)
+                        .background(color = fill)
+                        .border(1.dp, borderColor, shape)
                 } else {
                     Modifier.drawBehind {
                         drawLine(
@@ -197,14 +305,6 @@ private fun ThemeOption(
                             end = Offset(size.width, size.height),
                             strokeWidth = 1.dp.toPx(),
                         )
-                        if (selected) {
-                            drawLine(
-                                color = colors.accent,
-                                start = Offset(0f, 0f),
-                                end = Offset(0f, size.height),
-                                strokeWidth = 2.dp.toPx(),
-                            )
-                        }
                     }
                 },
             )
@@ -216,17 +316,19 @@ private fun ThemeOption(
                 Modifier
                     .size(14.dp)
                     .clip(RoundedCornerShape(percent = 50))
-                    .border(1.dp, if (selected) colors.accent else colors.hairlineStrong, RoundedCornerShape(percent = 50)),
+                    .border(1.dp, ringColor, RoundedCornerShape(percent = 50)),
                 contentAlignment = Alignment.Center,
             ) {
-                if (selected) {
-                    Box(
-                        Modifier
-                            .size(7.dp)
-                            .clip(RoundedCornerShape(percent = 50))
-                            .background(color = colors.accent),
-                    )
-                }
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .graphicsLayer {
+                            scaleX = dotScale
+                            scaleY = dotScale
+                        }
+                        .clip(RoundedCornerShape(percent = 50))
+                        .background(color = colors.accent),
+                )
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -284,7 +386,7 @@ fun KeepAliveGuideDialog(
     val type = Dsh.type
     val allOk = batteryOk && autoStartOk && (!powerPolicyNeeded || powerPolicyOk)
 
-    Dialog(onDismissRequest = onDismiss) {
+    DshAnimatedDialog(onDismissRequest = onDismiss, properties = DialogProperties()) { close ->
         Box(
             Modifier
                 .fillMaxWidth()
@@ -301,7 +403,7 @@ fun KeepAliveGuideDialog(
                         Modifier
                             .size(28.dp)
                             .clip(RoundedCornerShape(percent = 50))
-                            .dshClickable(scaleOnPress = false, onClick = onDismiss),
+                            .dshClickable(scaleOnPress = false, onClick = close),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text("×", style = type.rowTitle, color = colors.inkMuted)

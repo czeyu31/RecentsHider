@@ -40,9 +40,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.view.WindowCompat
+import com.example.hiderecents.ui.components.DshAnimatedDialog
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.screens.AppActionSheet
 import com.example.hiderecents.ui.screens.AppDetailDialog
@@ -896,7 +897,7 @@ private fun UninstallConfirmDialog(
 ) {
     val colors = Dsh.colors
     val type = Dsh.type
-    Dialog(onDismissRequest = onDismiss) {
+    DshAnimatedDialog(onDismissRequest = onDismiss, properties = DialogProperties()) { close ->
         Column(
             Modifier
                 .fillMaxWidth()
@@ -924,7 +925,7 @@ private fun UninstallConfirmDialog(
             }
             Spacer(Modifier.height(10.dp))
             Box(Modifier.fillMaxWidth()) {
-                DshGhostButton("取消", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
+                DshGhostButton("取消", onClick = close, modifier = Modifier.fillMaxWidth())
             }
         }
     }

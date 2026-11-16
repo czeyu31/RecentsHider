@@ -34,7 +34,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,11 +51,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.hiderecents.ui.components.AppIconTile
+import com.example.hiderecents.ui.components.DshAnimatedDialog
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.DshIcon
 import com.example.hiderecents.ui.components.DshIconKind
 import com.example.hiderecents.ui.components.DshSwitch
+import com.example.hiderecents.ui.components.LongTextDialog
 import com.example.hiderecents.ui.components.StaggeredEnter
 import com.example.hiderecents.ui.components.dshCanvasBackground
 import com.example.hiderecents.ui.components.dshClickable
@@ -681,15 +685,14 @@ fun A11yActionSheet(
     val type = Dsh.type
     val dimens = Dsh.dimens
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
+    var showDescription by remember { mutableStateOf(false) }
+
+    DshAnimatedDialog(onDismissRequest = onDismiss) { close ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .dshClickable(scaleOnPress = false, haptic = false) { onDismiss() },
+                    .dshClickable(scaleOnPress = false, haptic = false) { close() },
             )
             Column(
                 Modifier
@@ -737,6 +740,11 @@ fun A11yActionSheet(
                 }
                 DshDivider()
                 A11ySheetAction(
+                    title = "查看完整介绍",
+                    desc = "列表里只显示一行，这里是全文",
+                    onClick = { showDescription = true },
+                )
+                A11ySheetAction(
                     title = if (item.isPinned) "取消置顶" else "置顶到列表最前",
                     desc = "置顶后排在列表首位",
                     onClick = onTogglePin,
@@ -745,6 +753,19 @@ fun A11yActionSheet(
                     title = if (item.isProtected) "关闭防回收保护" else "开启防回收保护",
                     desc = "被系统关掉后自动恢复",
                     onClick = onToggleProtect,
+                )
+            }
+
+            if (showDescription) {
+                LongTextDialog(
+                    title = item.appName,
+                    body = item.description,
+                    subtitle = buildString {
+                        append(item.serviceName)
+                        append(if (item.isEnabled) " · 已启用" else " · 未启用")
+                        if (item.isSystem) append(" · 系统应用")
+                    },
+                    onDismiss = { showDescription = false },
                 )
             }
         }

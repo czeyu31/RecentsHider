@@ -17,7 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.example.hiderecents.ui.components.DshAnimatedDialog
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.dshClickable
 import com.example.hiderecents.ui.theme.Dsh
@@ -40,7 +41,10 @@ fun HrConfirmDialog(
     val type = Dsh.type
     val shape = RoundedCornerShape(Dsh.dimens.panelRadius)
 
-    Dialog(onDismissRequest = onCancel) {
+    DshAnimatedDialog(
+        onDismissRequest = onCancel,
+        properties = DialogProperties(),
+    ) { close ->
         Column(
             Modifier
                 .fillMaxWidth()
@@ -59,7 +63,7 @@ fun HrConfirmDialog(
                 Box(Modifier.weight(1f)) {
                     DshGhostButton(
                         text = "取消",
-                        onClick = onCancel,
+                        onClick = close,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }

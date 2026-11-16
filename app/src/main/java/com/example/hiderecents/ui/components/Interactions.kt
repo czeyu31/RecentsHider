@@ -1,5 +1,6 @@
 package com.example.hiderecents.ui.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -9,9 +10,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -37,6 +39,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.hiderecents.ui.theme.Dsh
+import com.example.hiderecents.ui.theme.MotionEase
 import com.example.hiderecents.ui.theme.MotionSpecs
 import com.example.hiderecents.ui.theme.rememberMotionEnabled
 import kotlinx.coroutines.delay
@@ -50,10 +53,12 @@ import kotlinx.coroutines.delay
  * scaleOnPress = false 用于整行列表项：整行缩放会露出边缘缝隙，
  * 行级按压改为「背景色调 + 透明度」。
  */
+@OptIn(ExperimentalFoundationApi::class)
 fun Modifier.dshClickable(
     enabled: Boolean = true,
     scaleOnPress: Boolean = true,
     haptic: Boolean = true,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ): Modifier = composed {
     val motionEnabled = rememberMotionEnabled()
@@ -79,16 +84,25 @@ fun Modifier.dshClickable(
             scaleY = scale
             this.alpha = alpha
         }
-        .clickable(
+        .combinedClickable(
             interactionSource = interaction,
             indication = null,
             enabled = enabled,
-        ) {
-            if (haptic && enabled) {
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            }
-            onClick()
-        }
+            onLongClick = if (onLongClick == null) {
+                null
+            } else {
+                {
+                    if (haptic) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                }
+            },
+            onClick = {
+                if (haptic && enabled) {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                }
+                onClick()
+            },
+        )
 }
 
 /** 列表行按压：背景色调亮/压暗，不做缩放 */
@@ -197,7 +211,6 @@ fun StaggeredEnter(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val motion = Dsh.motion
     val motionEnabled = rememberMotionEnabled()
     val risePx = with(LocalDensity.current) { MotionSpecs.ENTER_RISE_DP.dp.toPx() }
     var shown by remember { mutableStateOf(false) }
@@ -213,7 +226,7 @@ fun StaggeredEnter(
 
     val progress by animateFloatAsState(
         targetValue = if (shown) 1f else 0f,
-        animationSpec = MotionSpecs.enter(motion, motionEnabled),
+        animationSpec = MotionEase.enter(motionEnabled),
         label = "dshStagger",
     )
 
@@ -221,6 +234,43 @@ fun StaggeredEnter(
         modifier.graphicsLayer {
             alpha = progress
             translationY = (1f - progress) * risePx
+        },
+    ) {
+        content()
+    }
+}
+
+/**
+ * 页内整屏切换。
+ *
+ * 这几页是 `when (screen)` 直接换内容的，没有系统转场，点了就是硬切一下。
+ * 这里给新屏补一段自右滑入 + 淡入，曲线与时长对齐「页面切换」：ease-in-out 300ms。
+ * key 一变就重新播，所以每一屏进来都有入场。
+ */
+@Composable
+fun DshScreenEnter(
+    screenKey: Any,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val motionEnabled = rememberMotionEnabled()
+
+    // 动画值本身必须跟着 key 重建：只重置一个外部的 shown 标记是不够的，
+    // animateFloatAsState 的内部状态会留在 1.0，目标值从 1 回到 1 就等于没有动画。
+    val progress = remember(screenKey) { Animatable(0f) }
+
+    LaunchedEffect(screenKey) {
+        progress.snapTo(0f)
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = MotionEase.move(motionEnabled),
+        )
+    }
+
+    Box(
+        modifier.graphicsLayer {
+            alpha = progress.value
+            translationX = (1f - progress.value) * 32.dp.toPx()
         },
     ) {
         content()

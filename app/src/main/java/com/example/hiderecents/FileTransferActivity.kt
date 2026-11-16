@@ -50,11 +50,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import com.example.hiderecents.ui.components.AppIconTile
+import com.example.hiderecents.ui.components.DshAnimatedDialog
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.DshIcon
@@ -210,7 +210,6 @@ class FileTransferActivity : DshActivity() {
         prefs = getSharedPreferences("file_transfer_settings", Context.MODE_PRIVATE)
         autoInstallApk = prefs.getBoolean("auto_install_apk", false)
         showSystemApps = prefs.getBoolean("show_system_apps", false)
-        prefs.edit().remove("download_path").apply()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
             try {
@@ -225,8 +224,8 @@ class FileTransferActivity : DshActivity() {
             }
         }
 
-        downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        if (!downloadDir.exists()) downloadDir.mkdirs()
+        // 保留用户上次选的下载位置；存的那个目录不可用（被删 / 不可写）才回退到公共 Downloads
+        downloadDir = resolveDownloadDir()
 
         val themePrefs = getSharedPreferences("hide_recents_prefs", Context.MODE_PRIVATE)
         val theme = AppTheme.fromPref(themePrefs.getString("ui_theme", null))
@@ -882,6 +881,52 @@ class FileTransferActivity : DshActivity() {
         startActivityForResult(intent, REQ_PICK_DIR)
     }
 
+    /** 读回已保存的下载位置；目录不存在或写不进去就回退到公共 Downloads。 */
+    private fun resolveDownloadDir(): File {
+        val saved = prefs.getString("download_path", null)
+        if (!saved.isNullOrBlank()) {
+            val dir = File(saved)
+            if (dir.isDirectory && probeWritable(dir)) return dir
+        }
+        val fallback = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        if (!fallback.exists()) fallback.mkdirs()
+        return fallback
+    }
+
+    /** 真写一个临时文件再删掉，File.canWrite() 在外部存储上并不可信。 */
+    private fun probeWritable(dir: File): Boolean {
+        if (!dir.isDirectory) return false
+        val probe = File(dir, ".ft_write_probe_" + System.currentTimeMillis())
+        return try {
+            FileOutputStream(probe).use { it.write(0) }
+            probe.delete()
+            true
+        } catch (_: Exception) {
+            probe.delete()
+            false
+        }
+    }
+
+    /** SAF tree URI → 真实目录：primary 走内置存储，其他 volume（SD 卡）拼 /storage/<volume>。 */
+    private fun treeUriToDir(uri: Uri): File? {
+        val docId = try {
+            DocumentsContract.getTreeDocumentId(uri)
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val sep = docId.indexOf(':')
+        if (sep < 0) return null
+        val volume = docId.substring(0, sep)
+        if (volume.isEmpty()) return null
+        val relative = docId.substring(sep + 1)
+        val root = if (volume.equals("primary", ignoreCase = true)) {
+            Environment.getExternalStorageDirectory()
+        } else {
+            File("/storage/$volume")
+        }
+        return if (relative.isEmpty()) root else File(root, relative)
+    }
+
     private fun shareClipboard() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = clipboard.primaryClip
@@ -1034,16 +1079,36 @@ class FileTransferActivity : DshActivity() {
 
             REQ_PICK_DIR -> {
                 val uri = data?.data ?: return
-                try {
-                    val path = uri.path?.replace("/tree/primary:", "/storage/emulated/0/") ?: ""
-                    if (path.isNotEmpty()) {
-                        val dir = File(path)
+                val dir = treeUriToDir(uri)
+                if (dir == null) {
+                    Toast.makeText(
+                        this,
+                        "这个位置无法直接写入，请选择手机存储内的文件夹",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                } else {
+                    try {
                         if (!dir.exists()) dir.mkdirs()
-                        downloadDir = dir
-                        updateAvailableSpace()
-                        Toast.makeText(this, "下载位置已改为 ${dir.absolutePath}", Toast.LENGTH_SHORT).show()
+                        if (probeWritable(dir)) {
+                            downloadDir = dir
+                            // 选好就落盘，不必等用户再点一次「保存」
+                            prefs.edit().putString("download_path", dir.absolutePath).apply()
+                            updateAvailableSpace()
+                            Toast.makeText(this, "下载位置已改为 ${dir.absolutePath}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(
+                                this,
+                                "这个位置无法直接写入，请选择手机存储内的文件夹",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    } catch (_: Exception) {
+                        Toast.makeText(
+                            this,
+                            "这个位置无法直接写入，请选择手机存储内的文件夹",
+                            Toast.LENGTH_LONG,
+                        ).show()
                     }
-                } catch (_: Exception) {
                 }
             }
 
@@ -1521,15 +1586,15 @@ private fun SettingsSheet(
     val type = Dsh.type
     val dimens = Dsh.dimens
 
-    Dialog(
+    DshAnimatedDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
+    ) { close ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .dshClickable(scaleOnPress = false, haptic = false) { onDismiss() },
+                    .dshClickable(scaleOnPress = false, haptic = false) { close() },
             )
             Column(
                 Modifier
@@ -1619,7 +1684,7 @@ private fun SettingsSheet(
                 Spacer(Modifier.height(20.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Box(Modifier.weight(1f)) {
-                        DshGhostButton("取消", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
+                        DshGhostButton("取消", onClick = close, modifier = Modifier.fillMaxWidth())
                     }
                     Box(Modifier.weight(1f)) {
                         DshGhostButton("保存", onClick = onSave, modifier = Modifier.fillMaxWidth())
@@ -1644,7 +1709,10 @@ private fun TextInputDialog(
     val dimens = Dsh.dimens
     var text by remember { mutableStateOf("") }
 
-    Dialog(onDismissRequest = onDismiss) {
+    DshAnimatedDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(),
+    ) { close ->
         Column(
             Modifier
                 .fillMaxWidth()
@@ -1687,7 +1755,7 @@ private fun TextInputDialog(
             Spacer(Modifier.height(18.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(Modifier.weight(1f)) {
-                    DshGhostButton("取消", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
+                    DshGhostButton("取消", onClick = close, modifier = Modifier.fillMaxWidth())
                 }
                 Box(Modifier.weight(1f)) {
                     DshGhostButton("分享", onClick = { onConfirm(text) }, modifier = Modifier.fillMaxWidth())
@@ -1715,15 +1783,15 @@ private fun AppPickerSheet(
     val type = Dsh.type
     val dimens = Dsh.dimens
 
-    Dialog(
+    DshAnimatedDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
+    ) { close ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .dshClickable(scaleOnPress = false, haptic = false) { onDismiss() },
+                    .dshClickable(scaleOnPress = false, haptic = false) { close() },
             )
             Column(
                 Modifier
@@ -1828,7 +1896,7 @@ private fun AppPickerSheet(
                 }
 
                 Spacer(Modifier.height(14.dp))
-                DshGhostButton("取消", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
+                DshGhostButton("取消", onClick = close, modifier = Modifier.fillMaxWidth())
             }
         }
     }

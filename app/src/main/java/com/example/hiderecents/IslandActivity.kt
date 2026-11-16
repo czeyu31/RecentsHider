@@ -14,7 +14,7 @@ import com.example.hiderecents.ui.theme.AppTheme
 import com.example.hiderecents.ui.theme.DshTheme
 import com.example.hiderecents.ui.theme.applyDshSystemBars
 
-/** 超级岛设置页。 */
+/** 原生岛设置页。 */
 class IslandActivity : DshActivity() {
 
     /** 上一次的岛优先级，用来判断这次改的是不是它 */
@@ -78,7 +78,7 @@ class IslandActivity : DshActivity() {
             context = this,
             id = IslandPublish.tempId(),
             title = "测试 46.2℃",
-            content = "超级岛自检",
+            content = "原生岛自检",
             leftText = "CPU",
             rightText = "46.2℃",
             progressPct = 62,

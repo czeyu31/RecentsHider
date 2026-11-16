@@ -40,11 +40,14 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.hiderecents.ui.components.paperHeaderRule
 import com.example.hiderecents.ui.components.AppIconTile
+import com.example.hiderecents.ui.components.DshAnimatedDialog
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.dshFieldFill
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.DshIcon
 import com.example.hiderecents.ui.components.DshIconKind
+import com.example.hiderecents.ui.components.LongTextDialog
+import com.example.hiderecents.ui.components.SectionHeader
 import com.example.hiderecents.ui.components.StaggeredEnter
 import com.example.hiderecents.ui.components.dshCanvasBackground
 import com.example.hiderecents.ui.components.dshClickable
@@ -88,6 +91,7 @@ fun NotificationHistoryScreen(
     val dimens = Dsh.dimens
     val type = Dsh.type
     val surface = Dsh.surface
+    var detail by remember { mutableStateOf<NotificationEntry?>(null) }
 
     Box(modifier.fillMaxSize().dshCanvasBackground()) {
         Column(
@@ -214,10 +218,10 @@ fun NotificationHistoryScreen(
                             }
                             if (index < 12) {
                                 StaggeredEnter(index = index) {
-                                    NotificationRow(item = item)
+                                    NotificationRow(item = item, onLongPress = { detail = item })
                                 }
                             } else {
-                                NotificationRow(item = item)
+                                NotificationRow(item = item, onLongPress = { detail = item })
                             }
                         }
                     }
@@ -239,6 +243,22 @@ fun NotificationHistoryScreen(
                 Spacer(Modifier.weight(1f))
                 Text("共 " + totalCount + " 条", style = type.label, color = colors.inkFaint)
             }
+        }
+
+        val shownDetail = detail
+        if (shownDetail != null) {
+            LongTextDialog(
+                title = shownDetail.title.ifEmpty { shownDetail.appName },
+                body = if (shownDetail.title.isNotEmpty() && shownDetail.text.isNotEmpty()) {
+                    shownDetail.title + "\n\n" + shownDetail.text
+                } else if (shownDetail.title.isNotEmpty()) {
+                    shownDetail.title
+                } else {
+                    shownDetail.text
+                },
+                subtitle = shownDetail.appName + " · " + shownDetail.timeLabel,
+                onDismiss = { detail = null },
+            )
         }
     }
 }
@@ -325,15 +345,17 @@ private fun ChipItem(label: String, selected: Boolean, onClick: () -> Unit) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun NotificationRow(item: NotificationEntry) {
+private fun NotificationRow(item: NotificationEntry, onLongPress: () -> Unit) {
     val colors = Dsh.colors
     val type = Dsh.type
     val dimens = Dsh.dimens
     val surface = Dsh.surface
 
+    // 行本身没有点击动作，点按保持原样（什么都不发生），长按弹出完整内容。
     Row(
         Modifier
             .fillMaxWidth()
+            .dshClickable(scaleOnPress = false, onLongClick = onLongPress, onClick = {})
             .padding(
                 horizontal = if (surface.hasPanels) 14.dp else 0.dp,
                 vertical = 12.dp,
@@ -437,15 +459,17 @@ fun NotificationFilterSheet(
     val dimens = Dsh.dimens
     var current by remember { mutableStateOf(excluded) }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
+    // 分组在浮层打开这一刻定格：之后勾选变化只改行自身的勾选框，不跨栏移动。
+    // 每次重新打开浮层，remember 随新的 excluded 重新求值，才按最新状态重新分组。
+    val checkedApps = remember(excluded, apps) { apps.filter { it.packageName !in excluded } }
+    val uncheckedApps = remember(excluded, apps) { apps.filter { it.packageName in excluded } }
+
+    DshAnimatedDialog(onDismissRequest = onDismiss) { close ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .dshClickable(scaleOnPress = false, haptic = false) { onDismiss() },
+                    .dshClickable(scaleOnPress = false, haptic = false) { close() },
             )
             Column(
                 Modifier
@@ -474,46 +498,44 @@ fun NotificationFilterSheet(
                             .heightIn(max = 300.dp)
                             .verticalScroll(rememberScrollState()),
                     ) {
-                        apps.forEach { app ->
-                            val checked = app.packageName !in current
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .dshClickable(scaleOnPress = false) {
-                                        current = if (checked) {
-                                            current + app.packageName
-                                        } else {
+                        if (checkedApps.isNotEmpty()) {
+                            SectionHeader(title = "已勾选 · " + checkedApps.size)
+                            Spacer(Modifier.height(4.dp))
+                            checkedApps.forEach { app ->
+                                FilterAppRow(
+                                    app = app,
+                                    checked = app.packageName !in current,
+                                    onToggle = {
+                                        current = if (app.packageName in current) {
                                             current - app.packageName
+                                        } else {
+                                            current + app.packageName
                                         }
-                                    }
-                                    .padding(vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(
-                                    Modifier
-                                        .size(16.dp)
-                                        .clip(RoundedCornerShape(3.dp))
-                                        .background(
-                                            color = if (checked) colors.accentDim else Color.Transparent,
-                                        )
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (checked) colors.accent else colors.hairlineStrong,
-                                            shape = RoundedCornerShape(3.dp),
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (checked) {
-                                        Text("·", style = type.caption, color = colors.accent)
-                                    }
-                                }
-                                Spacer(Modifier.width(12.dp))
-                                Text(
-                                    text = app.label,
-                                    style = type.rowTitle,
-                                    color = colors.ink,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                                    },
+                                )
+                            }
+                        }
+
+                        if (checkedApps.isNotEmpty() && uncheckedApps.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            DshDivider()
+                            Spacer(Modifier.height(10.dp))
+                        }
+
+                        if (uncheckedApps.isNotEmpty()) {
+                            SectionHeader(title = "未勾选 · " + uncheckedApps.size)
+                            Spacer(Modifier.height(4.dp))
+                            uncheckedApps.forEach { app ->
+                                FilterAppRow(
+                                    app = app,
+                                    checked = app.packageName !in current,
+                                    onToggle = {
+                                        current = if (app.packageName in current) {
+                                            current - app.packageName
+                                        } else {
+                                            current + app.packageName
+                                        }
+                                    },
                                 )
                             }
                         }
@@ -542,5 +564,46 @@ fun NotificationFilterSheet(
                 }
             }
         }
+    }
+}
+
+/** 筛选浮层的一行：勾选框样式沿用 16dp 方块 + accent 描边 + 「·」。 */
+@Composable
+private fun FilterAppRow(app: AppChip, checked: Boolean, onToggle: () -> Unit) {
+    val colors = Dsh.colors
+    val type = Dsh.type
+    val shape = RoundedCornerShape(3.dp)
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .dshClickable(scaleOnPress = false, onClick = onToggle)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(16.dp)
+                .clip(shape)
+                .background(color = if (checked) colors.accentDim else Color.Transparent)
+                .border(
+                    width = 1.dp,
+                    color = if (checked) colors.accent else colors.hairlineStrong,
+                    shape = shape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) {
+                Text("·", style = type.caption, color = colors.accent)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = app.label,
+            style = type.rowTitle,
+            color = if (checked) colors.ink else colors.inkMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

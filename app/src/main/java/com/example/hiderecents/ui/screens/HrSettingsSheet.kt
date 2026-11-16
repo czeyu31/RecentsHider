@@ -19,8 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.hiderecents.ui.components.DshAnimatedDialog
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.DshSwitch
@@ -45,15 +45,15 @@ fun HrSettingsSheet(
     val type = Dsh.type
     val dimens = Dsh.dimens
 
-    Dialog(
+    DshAnimatedDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
+    ) { close ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .dshClickable(scaleOnPress = false, haptic = false) { onDismiss() },
+                    .dshClickable(scaleOnPress = false, haptic = false) { close() },
             )
             Column(
                 Modifier
@@ -95,7 +95,7 @@ fun HrSettingsSheet(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     DshGhostButton(
                         text = "关闭",
-                        onClick = onDismiss,
+                        onClick = close,
                         modifier = Modifier.weight(1f),
                     )
                 }

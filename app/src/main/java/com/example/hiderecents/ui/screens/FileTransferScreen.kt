@@ -37,9 +37,12 @@ import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.dshFieldFill
 import com.example.hiderecents.ui.components.DshIcon
 import com.example.hiderecents.ui.components.DshIconKind
+import com.example.hiderecents.ui.components.DshInlineCopyFeedback
 import com.example.hiderecents.ui.components.StaggeredEnter
 import com.example.hiderecents.ui.components.dshCanvasBackground
 import com.example.hiderecents.ui.components.dshClickable
+import com.example.hiderecents.ui.components.rememberCopyFeedback
+import com.example.hiderecents.ui.components.markCopied
 import com.example.hiderecents.ui.theme.Dsh
 import com.example.hiderecents.ui.theme.MotionSpecs
 import com.example.hiderecents.ui.theme.rememberMotionEnabled
@@ -282,6 +285,7 @@ private fun ServerBlock(
     val surface = Dsh.surface
     val dimens = Dsh.dimens
     val shape = RoundedCornerShape(dimens.panelRadius)
+    val copyFeedback = rememberCopyFeedback()
 
     Column(
         Modifier
@@ -342,7 +346,13 @@ private fun ServerBlock(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .dshClickable(scaleOnPress = false, onClick = onCopyUrl),
+                    .dshClickable(
+                        scaleOnPress = false,
+                        onClick = {
+                            copyFeedback.markCopied()
+                            onCopyUrl()
+                        },
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
@@ -357,7 +367,7 @@ private fun ServerBlock(
                     )
                 }
                 Spacer(Modifier.width(10.dp))
-                Text("复制", style = type.caption, color = colors.inkMuted)
+                DshInlineCopyFeedback(state = copyFeedback)
             }
         }
     }

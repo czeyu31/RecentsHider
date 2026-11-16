@@ -7,10 +7,11 @@
         android:toYScale="0.8"
         android:pivotX="50%"
         android:pivotY="50%"
-        android:duration="200"
-        android:interpolator="@android:anim/accelerate_interpolator" />
+        android:duration="150"
+        android:interpolator="@anim/ease_in" />
     <alpha
         android:fromAlpha="1.0"
         android:toAlpha="0.0"
-        android:duration="200" />
+        android:duration="150"
+        android:interpolator="@anim/ease_in" />
 </set>

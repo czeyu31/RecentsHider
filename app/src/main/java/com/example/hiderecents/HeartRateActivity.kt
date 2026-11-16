@@ -60,6 +60,7 @@ import com.example.hiderecents.ui.theme.DshTheme
 import com.example.hiderecents.ui.theme.applyDshSystemBars
 import kotlinx.coroutines.delay
 import java.io.File
+import com.example.hiderecents.ui.components.DshScreenEnter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -153,11 +154,13 @@ class HeartRateActivity : DshActivity() {
                 Box(Modifier.fillMaxSize()) {
                     // 本项目 Compose 版本上，AnimatedContent 包整页切换会在重组时偶发
                     // IndexOutOfBoundsException（Stack.pop），表现为点「录制历史」直接闪退，
-                    // 所以三屏改成直接切换，不做整页转场。
-                    when (screen) {
-                        Screen.REPORT -> opened?.let { Report(it) } ?: Live()
-                        Screen.HISTORY -> History()
-                        else -> Live()
+                    // 所以三屏仍是直接切换；进退场由 DshScreenEnter 手动给（滑入 + 淡入）。
+                    DshScreenEnter(screenKey = screen) {
+                        when (screen) {
+                            Screen.REPORT -> opened?.let { Report(it) } ?: Live()
+                            Screen.HISTORY -> History()
+                            else -> Live()
+                        }
                     }
 
                     if (showSettings) {

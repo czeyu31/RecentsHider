@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CSS ease-in-out：cubic-bezier(0.42, 0, 0.58, 1)。用于「页内移动 / 页面切换」 -->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:pathData="M0,0 C0.42,0 0.58,1 1,1" />

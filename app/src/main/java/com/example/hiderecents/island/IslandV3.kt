@@ -42,7 +42,7 @@ object IslandV3 {
         val mgr = context.getSystemService(android.app.NotificationManager::class.java) ?: return
         if (mgr.getNotificationChannel(CHANNEL) != null) return
         mgr.createNotificationChannel(
-            android.app.NotificationChannel(CHANNEL, "超级岛", android.app.NotificationManager.IMPORTANCE_DEFAULT).apply {
+            android.app.NotificationChannel(CHANNEL, "原生岛", android.app.NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "澎湃 3 焦点通知上岛"
                 setShowBadge(false)
                 setSound(null, null)

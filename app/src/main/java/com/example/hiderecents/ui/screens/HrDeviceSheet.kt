@@ -23,10 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.hiderecents.hr.HrDevice
 import com.example.hiderecents.ui.components.BreathingDot
+import com.example.hiderecents.ui.components.DshAnimatedDialog
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshGhostButton
 import com.example.hiderecents.ui.components.DshIcon
@@ -55,15 +55,15 @@ fun HrDeviceSheet(
     val type = Dsh.type
     val dimens = Dsh.dimens
 
-    Dialog(
+    DshAnimatedDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
+    ) { close ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .dshClickable(scaleOnPress = false, haptic = false) { onDismiss() },
+                    .dshClickable(scaleOnPress = false, haptic = false) { close() },
             )
             Column(
                 Modifier
@@ -172,7 +172,7 @@ fun HrDeviceSheet(
                     Box(Modifier.weight(1f)) {
                         DshGhostButton(
                             text = if (connectedAddress != null) "断开" else "关闭",
-                            onClick = { if (connectedAddress != null) onDisconnect() else onDismiss() },
+                            onClick = { if (connectedAddress != null) onDisconnect() else close() },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }

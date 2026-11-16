@@ -44,7 +44,7 @@ data class ToolboxTool(
     val meta: String,
     val icon: DshIconKind,
     val onClick: () -> Unit,
-    /** 半宽卡片里强制正方形（心率广播 / 超级岛这一对） */
+    /** 半宽卡片里强制正方形（心率广播 / 原生岛这一对） */
     val square: Boolean = false,
 )
 

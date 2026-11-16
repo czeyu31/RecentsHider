@@ -78,7 +78,7 @@ private const val TEMP_MIN = 0f
 private const val TEMP_MAX = 100f
 
 /**
- * 超级岛设置。一个岛一栏，栏与栏之间跟手左右滑动。
+ * 原生岛设置。一个岛一栏，栏与栏之间跟手左右滑动。
  *
  * 三栏内容自己横移，不走 pager：pager 的拖拽会和标尺抢手势，
  * 自己平移既能跟手预览，也能把阈值那块整段排除在翻页之外。
@@ -134,7 +134,7 @@ fun IslandSettingsScreen(
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("超级岛", style = type.h2, color = colors.ink)
+                    Text("原生岛", style = type.h2, color = colors.ink)
                     Spacer(Modifier.height(5.dp))
                     Text("按岛分类 · 左右滑动切换", style = type.label, color = colors.inkFaint)
                 }
