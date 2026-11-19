@@ -23,12 +23,12 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.tools.systemtool.beta"
+        applicationId = "com.tools.systemtool"
         minSdk = 26
         targetSdk = 34
         versionCode = 489
 
-        versionName = "3.3.3-beta"
+        versionName = "3.3.3"
     }
 
     buildTypes {
