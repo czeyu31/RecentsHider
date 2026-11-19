@@ -27,10 +27,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 489
-        ndk {
-            // 只打 arm64：其余三套 .so 是给 32 位老机和模拟器的，白占 7 MB 存储
-            abiFilters += listOf("arm64-v8a")
-        }
+
         versionName = "3.3.3-beta"
     }
 
