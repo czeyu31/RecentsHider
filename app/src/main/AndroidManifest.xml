@@ -24,6 +24,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- 手机远控：targetSdk 34 下 type=mediaProjection 的前台服务必须声明这条，
+         否则 startForeground 直接抛 SecurityException -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- 手机远控：targetSdk 34 下 type=mediaProjection 的前台服务必须声明这条，
+         否则 startForeground 直接抛 SecurityException -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
@@ -73,6 +78,18 @@
              改用 application 的 Theme.HideRecents，与其它页面完全一致。 -->
         <activity
             android:name=".ToolboxActivity" />
+
+        <activity
+            android:name=".RemoteControlActivity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|layoutDirection" />
+
+        <!-- 手机远控的被控端：持有 MediaProjection 采集并推流，同时接收触控与画质指令 -->
+        <service
+            android:name=".rc.RcHostService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
 
         <activity
             android:name=".AppManageActivity" />

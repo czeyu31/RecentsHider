@@ -11,6 +11,7 @@ interface ITaskHideService : IInterface {
     fun uninstallApp(packageName: String, deleteData: Boolean): Boolean
     fun execCommand(command: String): Pair<Boolean, String>
     fun sweepHidden(packages: List<String>, keepPackage: String): Int
+    fun openAbstractSocket(name: String): android.os.ParcelFileDescriptor?
 
     companion object {
         const val DESCRIPTOR = "com.example.hiderecents.ITaskHideService"
@@ -18,6 +19,7 @@ interface ITaskHideService : IInterface {
         const val TRANSACTION_uninstallApp = IBinder.FIRST_CALL_TRANSACTION + 1
         const val TRANSACTION_execCommand = IBinder.FIRST_CALL_TRANSACTION + 2
         const val TRANSACTION_sweepHidden = IBinder.FIRST_CALL_TRANSACTION + 3
+        const val TRANSACTION_openAbstractSocket = IBinder.FIRST_CALL_TRANSACTION + 4
     }
 }
 
@@ -47,6 +49,24 @@ class TaskHideService : Binder(), ITaskHideService {
 
     init {
         probeTaskApis()
+    }
+
+    /**
+     * scrcpy 的服务端是去「连接」抽象套接字，监听端一直由 adb 提供。
+     * 我们没有 adb，所以由 shell 身份的这里监听，accept 之后在
+     * 服务端套接字与 socketpair 之间双向中继，把另一端作为 fd 交回 App。
+     */
+    override fun openAbstractSocket(name: String): android.os.ParcelFileDescriptor? {
+        return runCatching {
+            val socket = android.net.LocalSocket()
+            socket.connect(
+                android.net.LocalSocketAddress(
+                    name,
+                    android.net.LocalSocketAddress.Namespace.ABSTRACT,
+                ),
+            )
+            android.os.ParcelFileDescriptor.dup(socket.fileDescriptor)
+        }.onFailure { Log.w(TAG, "openAbstractSocket failed: " + name, it) }.getOrNull()
     }
 
     private fun probeTaskApis() {
@@ -356,6 +376,19 @@ class TaskHideService : Binder(), ITaskHideService {
             reply?.writeNoException()
             reply?.writeInt(if (success) 1 else 0)
             reply?.writeString(output)
+            return true
+        }
+        if (code == ITaskHideService.TRANSACTION_openAbstractSocket) {
+            data.enforceInterface(ITaskHideService.DESCRIPTOR)
+            val name = data.readString() ?: ""
+            val pfd = openAbstractSocket(name)
+            reply?.writeNoException()
+            if (pfd == null) {
+                reply?.writeInt(0)
+            } else {
+                reply?.writeInt(1)
+                reply?.let { pfd.writeToParcel(it, 0) }
+            }
             return true
         }
         return super.onTransact(code, data, reply, flags)

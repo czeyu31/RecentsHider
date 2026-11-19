@@ -50,6 +50,8 @@ class NotificationHistoryActivity : DshActivity() {
 
     private var entries by mutableStateOf(listOf<NotificationEntry>())
     private var chips by mutableStateOf(listOf<AppChip>())
+    /** 筛选浮层用的应用清单：除了有记录的应用，还要带上被排除、因此没有记录的应用。 */
+    private var filterApps by mutableStateOf(listOf<AppChip>())
     private var selectedPackage by mutableStateOf<String?>(null)
     private var permissionGranted by mutableStateOf(false)
     private var excluded by mutableStateOf<Set<String>>(emptySet())
@@ -99,11 +101,12 @@ class NotificationHistoryActivity : DshActivity() {
                     onBack = { dshGoBack() },
                     onOpenFilter = { showFilter = true },
                     onClearAll = { clearAll() },
+                    onDelete = { deleteEntry(it) },
                 )
 
                 if (showFilter) {
                     NotificationFilterSheet(
-                        apps = chips,
+                        apps = filterApps,
                         excluded = excluded,
                         onDismiss = { showFilter = false },
                         onConfirm = { set ->
@@ -258,6 +261,20 @@ class NotificationHistoryActivity : DshActivity() {
                 )
             }
 
+        // 被取消勾选的应用不再产生记录，会从这里消失 —— 补回来，否则没法重新勾选
+        val excludedOnly = excluded
+            .filter { counts[it] == null }
+            .map { pkg ->
+                val label = try {
+                    pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                } catch (_: Exception) {
+                    pkg
+                }
+                AppChip(packageName = pkg, label = label)
+            }
+            .sortedBy { it.label }
+        filterApps = chips + excludedOnly
+
         if (selectedPackage != null && counts[selectedPackage] == null) {
             selectedPackage = null
         }
@@ -289,7 +306,29 @@ class NotificationHistoryActivity : DshActivity() {
         prefs.edit().putString("notifications", "[]").apply()
         entries = emptyList()
         chips = emptyList()
+        filterApps = emptyList()
         selectedPackage = null
         Toast.makeText(this, "已清空历史通知", Toast.LENGTH_SHORT).show()
+    }
+
+    /** 删掉一条：按包名 + 时间 + 标题定位，改完立即回读。 */
+    private fun deleteEntry(item: NotificationEntry) {
+        val raw = prefs.getString("notifications", "[]") ?: "[]"
+        val array = try {
+            JSONArray(raw)
+        } catch (_: Exception) {
+            JSONArray()
+        }
+        val kept = JSONArray()
+        for (i in 0 until array.length()) {
+            val obj = runCatching { array.getJSONObject(i) }.getOrNull() ?: continue
+            val same = obj.optString("packageName", "") == item.packageName &&
+                obj.optLong("time", 0L) == item.time &&
+                obj.optString("title", "") == item.title
+            if (!same) kept.put(obj)
+        }
+        prefs.edit().putString("notifications", kept.toString()).apply()
+        loadNotifications()
+        Toast.makeText(this, "已删除 1 条", Toast.LENGTH_SHORT).show()
     }
 }

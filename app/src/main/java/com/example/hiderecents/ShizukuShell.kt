@@ -65,6 +65,33 @@ object ShizukuShell {
 
     fun exec(command: String): Pair<Boolean, String> = exec(null, command)
 
+    /**
+     * 让 shell 身份代连 abstract 套接字，把 fd 交回本应用。
+     * App 自己连不了那个命名空间（按 uid 隔离），scrcpy 的服务端套接字就在里面。
+     */
+    fun openAbstractSocket(own: IBinder?, name: String): android.os.ParcelFileDescriptor? {
+        val binder = TaskHideBridge.resolve(own) ?: return null
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(ITaskHideService.DESCRIPTOR)
+            data.writeString(name)
+            binder.transact(ITaskHideService.TRANSACTION_openAbstractSocket, data, reply, 0)
+            reply.readException()
+            if (reply.readInt() != 0) {
+                android.os.ParcelFileDescriptor.CREATOR.createFromParcel(reply)
+            } else {
+                null
+            }
+        } catch (t: Throwable) {
+            lastError = t.message
+            null
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
     /** 只判断 newProcess 通道是否可用（不依赖用户服务） */
     fun probe(): Boolean {
         if (!permissionGranted()) return false

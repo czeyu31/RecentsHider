@@ -1,9 +1,28 @@
 package com.example.hiderecents.ui.screens
 
+import android.content.ClipData
+import android.util.Log
+import android.content.ClipboardManager
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,9 +50,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -85,6 +107,7 @@ fun NotificationHistoryScreen(
     onBack: () -> Unit,
     onOpenFilter: () -> Unit,
     onClearAll: () -> Unit,
+    onDelete: (NotificationEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = Dsh.colors
@@ -92,6 +115,7 @@ fun NotificationHistoryScreen(
     val type = Dsh.type
     val surface = Dsh.surface
     var detail by remember { mutableStateOf<NotificationEntry?>(null) }
+    val context = LocalContext.current
 
     Box(modifier.fillMaxSize().dshCanvasBackground()) {
         Column(
@@ -218,10 +242,18 @@ fun NotificationHistoryScreen(
                             }
                             if (index < 12) {
                                 StaggeredEnter(index = index) {
-                                    NotificationRow(item = item, onLongPress = { detail = item })
+                                    SwipeNotificationRow(
+                                        item = item,
+                                        onOpenDetail = { detail = item },
+                                        onDelete = { onDelete(item) },
+                                    )
                                 }
                             } else {
-                                NotificationRow(item = item, onLongPress = { detail = item })
+                                SwipeNotificationRow(
+                                    item = item,
+                                    onOpenDetail = { detail = item },
+                                    onDelete = { onDelete(item) },
+                                )
                             }
                         }
                     }
@@ -247,18 +279,105 @@ fun NotificationHistoryScreen(
 
         val shownDetail = detail
         if (shownDetail != null) {
-            LongTextDialog(
-                title = shownDetail.title.ifEmpty { shownDetail.appName },
-                body = if (shownDetail.title.isNotEmpty() && shownDetail.text.isNotEmpty()) {
-                    shownDetail.title + "\n\n" + shownDetail.text
-                } else if (shownDetail.title.isNotEmpty()) {
-                    shownDetail.title
-                } else {
-                    shownDetail.text
-                },
-                subtitle = shownDetail.appName + " · " + shownDetail.timeLabel,
-                onDismiss = { detail = null },
-            )
+            DshAnimatedDialog(onDismissRequest = { detail = null }) { close ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .dshClickable(scaleOnPress = false, haptic = false) { close() },
+                    )
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .clip(RoundedCornerShape(dimens.panelRadius))
+                            .background(colors.canvas)
+                            .border(1.dp, colors.hairlineStrong, RoundedCornerShape(dimens.panelRadius))
+                            .padding(16.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val icon = shownDetail.icon
+                            if (icon != null) {
+                                Image(
+                                    bitmap = icon,
+                                    contentDescription = shownDetail.appName,
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(dimens.iconRadius)),
+                                )
+                            } else {
+                                AppIconTile(
+                                    label = shownDetail.appName,
+                                    seed = shownDetail.packageName.hashCode(),
+                                    tileSize = 36.dp,
+                                )
+                            }
+                            Spacer(Modifier.width(11.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = shownDetail.appName,
+                                    style = type.rowTitle,
+                                    color = colors.ink,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    text = shownDetail.timeLabel,
+                                    style = type.label,
+                                    color = colors.inkFaint,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        DshDivider()
+                        Spacer(Modifier.height(12.dp))
+                        if (shownDetail.title.isNotEmpty()) {
+                            Text(shownDetail.title, style = type.title, color = colors.ink)
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        Column(
+                            Modifier
+                                .heightIn(max = 340.dp)
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            Text(
+                                text = shownDetail.text.ifEmpty { "（这条通知没有正文）" },
+                                style = type.caption,
+                                color = colors.inkMuted,
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        DshDivider()
+                        Spacer(Modifier.height(10.dp))
+                        Row(Modifier.fillMaxWidth()) {
+                            Box(Modifier.weight(1f)) {
+                                DshGhostButton(
+                                    text = "复制",
+                                    onClick = {
+                                        val clip = if (shownDetail.title.isNotEmpty() && shownDetail.text.isNotEmpty()) {
+                                            shownDetail.title + "\n" + shownDetail.text
+                                        } else {
+                                            shownDetail.title.ifEmpty { shownDetail.text }
+                                        }
+                                        context.getSystemService(ClipboardManager::class.java)
+                                            ?.setPrimaryClip(ClipData.newPlainText("notification", clip))
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Box(Modifier.weight(1f)) {
+                                DshGhostButton(
+                                    text = "关闭",
+                                    onClick = { close() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -344,18 +463,121 @@ private fun ChipItem(label: String, selected: Boolean, onClick: () -> Unit) {
 // 列表行
 // ---------------------------------------------------------------------------
 
+/** 左滑露出两项动作：看完整内容 / 删除。不复用长按，也不再使用彩色菜单。 */
 @Composable
-private fun NotificationRow(item: NotificationEntry, onLongPress: () -> Unit) {
+private fun SwipeNotificationRow(
+    item: NotificationEntry,
+    onOpenDetail: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val colors = Dsh.colors
+    val type = Dsh.type
+    val density = LocalDensity.current
+    val menuWidth = 132.dp
+    val menuPx = with(density) { menuWidth.toPx() }
+    val offsetX = remember { Animatable(0f) }
+    var dragStart by remember { mutableStateOf(0f) }
+    val scope = rememberCoroutineScope()
+    val dragState = rememberDraggableState { delta ->
+        scope.launch { offsetX.snapTo((offsetX.value + delta).coerceIn(-menuPx, 0f)) }
+    }
+    // 打开带一点回弹，收回慢一些，避免"啪"地弹回去
+    val openSpec = spring<Float>(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow)
+    val closeSpec = tween<Float>(durationMillis = 420, easing = FastOutSlowInEasing)
+    val progress = (-offsetX.value / menuPx).coerceIn(0f, 1f)
+
+    Box(Modifier.fillMaxWidth().clipToBounds()) {
+        // 只在拖动时渲染：内容左移后就地露出，不需要给整行铺背景遮罩（那会造成色差）
+        if (progress > 0f) {
+            Row(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .width(menuWidth)
+                    .heightIn(min = 72.dp)
+                    .graphicsLayer { alpha = progress },
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+Box(
+                    Modifier
+                        .width(1.dp)
+                        .height(18.dp)
+                        .background(colors.hairlineStrong),
+                )
+                Text(
+                    text = "详情",
+                    style = type.caption,
+                    color = colors.inkMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .dshClickable(scaleOnPress = false) {
+                            scope.launch { offsetX.animateTo(0f, closeSpec) }
+                            onOpenDetail()
+                        }
+                        .padding(vertical = 12.dp),
+                )
+                Box(
+                    Modifier
+                        .width(1.dp)
+                        .height(18.dp)
+                        .background(colors.hairlineStrong),
+                )
+                Text(
+                    text = "删除",
+                    style = type.caption,
+                    color = colors.inkMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .dshClickable(scaleOnPress = false) {
+                            scope.launch { offsetX.animateTo(0f, closeSpec) }
+                            onDelete()
+                        }
+                        .padding(vertical = 12.dp),
+                )
+            }
+        }
+
+        Box(
+            Modifier
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                .fillMaxWidth()
+                .draggable(
+                    state = dragState,
+                    orientation = Orientation.Horizontal,
+onDragStarted = { dragStart = offsetX.value },
+                    onDragStopped = {
+                        // 按拖动方向判定：打开态往右滑一点就收，关闭态往左滑一点就开
+                        val wasOpen = dragStart <= -menuPx * 0.5f
+                        val open = if (wasOpen) {
+                            offsetX.value < -menuPx * 0.82f
+                        } else {
+                            offsetX.value < -menuPx * 0.18f
+                        }
+                        if (open) {
+                            offsetX.animateTo(-menuPx, openSpec)
+                        } else {
+                            offsetX.animateTo(0f, closeSpec)
+                        }
+                    },
+                ),
+        ) {
+            NotificationRowContent(item)
+        }
+    }
+}
+
+@Composable
+private fun NotificationRowContent(item: NotificationEntry) {
     val colors = Dsh.colors
     val type = Dsh.type
     val dimens = Dsh.dimens
     val surface = Dsh.surface
 
-    // 行本身没有点击动作，点按保持原样（什么都不发生），长按弹出完整内容。
     Row(
         Modifier
             .fillMaxWidth()
-            .dshClickable(scaleOnPress = false, onLongClick = onLongPress, onClick = {})
             .padding(
                 horizontal = if (surface.hasPanels) 14.dp else 0.dp,
                 vertical = 12.dp,

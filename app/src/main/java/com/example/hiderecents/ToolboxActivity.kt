@@ -127,6 +127,13 @@ class ToolboxActivity : DshActivity() {
             icon = DshIconKind.TRANSFER,
             onClick = { open(FileTransferActivity::class.java) },
         ),
+        ToolboxTool(
+            title = "手机远控",
+            desc = "把本机屏幕共享给另一台手机，或反过来看对方的画面",
+            meta = "局域网 · 仅画面",
+            icon = DshIconKind.TRANSFER,
+            onClick = { open(RemoteControlActivity::class.java) },
+        ),
         // 心率广播与原生岛都排在末尾：两张正方形卡片一左一右
         // 「应用管理」独占首行、中间两列成对，原有位置不变
         ToolboxTool(
