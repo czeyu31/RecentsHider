@@ -3,11 +3,13 @@ package com.example.hiderecents.ui.screens
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -110,9 +112,8 @@ fun SimCountryScreen(
     }
     // 手势滑页 -> 同步分段状态
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { page ->
-            val target = SimSegment.values()[page]
-            if (target != segment) onSegment(target)
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            onSegment(SimSegment.values()[page])
         }
     }
 
@@ -183,12 +184,14 @@ private fun SimSegments(
     val colors = Dsh.colors
     val type = Dsh.type
     val positions = remember { mutableStateMapOf<Int, Pair<Float, Float>>() }
+    // 文字选中态跟 pager 走，避免与下划线脱节
+    val activeIndex = pagerState.currentPage
 
     Box(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(top = 12.dp)) {
             SimSegment.values().forEachIndexed { index, item ->
                 if (index > 0) Spacer(Modifier.width(24.dp))
-                val selected = item == segment
+                val selected = index == activeIndex
                 // 间距用 Spacer 而不是 Box 的 padding：否则测到的是「文字 + 内边距」，
                 // 下划线会比文字长出一截。
                 Box(
@@ -482,36 +485,34 @@ private fun SimCardSelector(slots: List<SimSlot>, selectedIndex: Int, onSelect: 
     val hasPanels = Dsh.surface.hasPanels
     val radius = RoundedCornerShape(if (hasPanels) Dsh.dimens.tileRadius else 0.dp)
 
+    // 整卡固定高度：两栏都 fillMaxHeight，强调色竖条才能真正铺到上下边缘
+    val cardHeight = if (hasPanels) 104.dp else 96.dp
     Row(
         Modifier
             .fillMaxWidth()
+            .height(cardHeight)
             .clip(radius)
             .border(1.dp, hairline, radius),
     ) {
         slots.forEachIndexed { index, slot ->
             if (index > 0) {
-                Box(Modifier.width(1.dp).height(96.dp).background(hairline))
+                Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
             }
             val selected = index == selectedIndex
             Box(
                 Modifier
                     .weight(1f)
+                    .fillMaxHeight()
                     .dshClickable { onSelect(index) }
                     .background(if (selected) dshFieldFill(0.9f) else Color.Transparent)
-                    // 强调色竖条铺满整卡高度：上下各多画 1.5dp，盖住外层的 1dp 描边
                     .drawBehind {
                         if (selected) {
-                            val over = 1.5.dp.toPx()
-                            drawRect(
-                                color = colors.accent,
-                                topLeft = Offset(0f, -over),
-                                size = Size(2.dp.toPx(), size.height + over * 2),
-                            )
+                            drawRect(color = colors.accent, size = Size(2.dp.toPx(), size.height))
                         }
                     }
                     .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
             ) {
-                Column {
+                Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.Center) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("卡 " + (slot.slotIndex + 1), style = type.label, color = colors.inkFaint)
                         if (slot.hasOverride) {
@@ -577,7 +578,7 @@ private fun SimStatTriple(slot: SimSlot?, target: CountryPreset?) {
             footnote = slot?.let { "运营商 " + it.carrierName.ifEmpty { "未知" } } ?: "无卡",
             modifier = Modifier.weight(1f),
         )
-        Box(Modifier.width(1.dp).height(96.dp).background(hairline))
+        Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
         StatCell(
             label = "覆盖为",
             value = target?.mcc ?: "—",
@@ -588,7 +589,7 @@ private fun SimStatTriple(slot: SimSlot?, target: CountryPreset?) {
             modifier = Modifier.weight(1f),
             insetStart = 16.dp,
         )
-        Box(Modifier.width(1.dp).height(96.dp).background(hairline))
+        Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
         StatCell(
             label = "影响卡",
             value = slot?.let { "卡 " + (it.slotIndex + 1) } ?: "—",
@@ -714,7 +715,7 @@ private fun SimDiagnosticsStats(count: Int, lastMillis: Long?, failures: Int) {
             footnote = "次 · 今日",
             modifier = Modifier.weight(1f),
         )
-        Box(Modifier.width(1.dp).height(96.dp).background(hairline))
+        Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
         StatCell(
             label = "耗时",
             value = lastMillis?.toString() ?: "—",
@@ -722,7 +723,7 @@ private fun SimDiagnosticsStats(count: Int, lastMillis: Long?, failures: Int) {
             modifier = Modifier.weight(1f),
             insetStart = 16.dp,
         )
-        Box(Modifier.width(1.dp).height(96.dp).background(hairline))
+        Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
         StatCell(
             label = "状态",
             value = if (failures == 0) "OK" else "FAIL",

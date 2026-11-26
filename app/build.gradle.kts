@@ -11,7 +11,7 @@ android {
     namespace = "com.example.hiderecents"
     compileSdk = 36
 
-    // ADB host 依赖 BouncyCastle，几个 jar 里有同路径的 META-INF 条目，必须排除掉
+    // ADB host 渚濊禆 BouncyCastle锛屽嚑涓?jar 閲屾湁鍚岃矾寰勭殑 META-INF 鏉＄洰锛屽繀椤绘帓闄ゆ帀
     packaging {
         resources {
             excludes += setOf(
@@ -26,16 +26,16 @@ android {
         applicationId = "com.tools.systemtool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 490
+        versionCode = 491
 
-        versionName = "3.3.4"
+        versionName = "3.3.5"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             isDebuggable = false
-            // 用debug keystore 签名，保证可原地覆盖同签名的旧包
+            // 鐢╠ebug keystore 绛惧悕锛屼繚璇佸彲鍘熷湴瑕嗙洊鍚岀鍚嶇殑鏃у寘
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -66,19 +66,19 @@ dependencies {
 
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
-    // 服务�?AIDL（IShizukuService/IRemoteProcess）：用户服务连不上时用newProcess 兜底执行命令
+    // 鏈嶅姟锟?AIDL锛圛ShizukuService/IRemoteProcess锛夛細鐢ㄦ埛鏈嶅姟杩炰笉涓婃椂鐢╪ewProcess 鍏滃簳鎵ц鍛戒护
     implementation("dev.rikka.shizuku:aidl:13.1.5")
-    // SIM 国家码：ICarrierConfigLoader / IActivityManager 都是隐藏内部类，targetSdk 34 下
-    // 不豁免 hidden API 就反射不到，这里不替换 android.jar，只加运行时豁免
+    // SIM 鍥藉鐮侊細ICarrierConfigLoader / IActivityManager 閮芥槸闅愯棌鍐呴儴绫伙紝targetSdk 34 涓?
+    // 涓嶈眮鍏?hidden API 灏卞弽灏勪笉鍒帮紝杩欓噷涓嶆浛鎹?android.jar锛屽彧鍔犺繍琛屾椂璞佸厤
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:4.3")
-    // ADB host（无线调试配对）：另一条 shell 授权来源，不依赖 Shizuku
-    // ADB host：无线调试配对，另一条 shell 授权来源（beta 专用）
+    // ADB host锛堟棤绾胯皟璇曢厤瀵癸級锛氬彟涓€鏉?shell 鎺堟潈鏉ユ簮锛屼笉渚濊禆 Shizuku
+    // ADB host锛氭棤绾胯皟璇曢厤瀵癸紝鍙︿竴鏉?shell 鎺堟潈鏉ユ簮锛坆eta 涓撶敤锛?
     implementation("com.github.Ernest-su:adb:v0.2.1")
-    // 上面两个库带进来的 native 库版本偏旧，未做 16 KB 页对齐，系统会弹兼容性警告
+    // 涓婇潰涓や釜搴撳甫杩涙潵鐨?native 搴撶増鏈亸鏃э紝鏈仛 16 KB 椤靛榻愶紝绯荤粺浼氬脊鍏煎鎬ц鍛?
     implementation("org.conscrypt:conscrypt-android:2.9.0")
     implementation("androidx.graphics:graphics-path:1.1.0")
 
-    // ---- Compose (UI 重写�? ----
+    // ---- Compose (UI 閲嶅啓锟? ----
     val composeBom = platform("androidx.compose:compose-bom:2024.09.00")
     implementation(composeBom)
     implementation("androidx.activity:activity-compose:1.8.0")
@@ -93,3 +93,4 @@ dependencies {
     implementation("androidx.compose.animation:animation-core")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
