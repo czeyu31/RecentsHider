@@ -44,6 +44,15 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
+    <!--
+        SIM 国家码的兜底通道：部分 ROM 直接以 shell 身份调 overrideConfig 会被拒，
+        需要靠一次 Instrumentation 启动把本进程的 uid 临时挂上 shell 权限身份。
+        targetPackage 必须是自己，见 sim/PrivilegedRunner.kt。
+    -->
+    <instrumentation
+        android:name="com.example.hiderecents.sim.SimConfigInstrumentation"
+        android:targetPackage="${applicationId}" />
+
     <application
         android:name=".DshApplication"
         android:allowBackup="true"
@@ -178,6 +187,10 @@
 
         <activity
             android:name=".HeartRateActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".SimCountryActivity"
             android:exported="false" />
 
         <activity

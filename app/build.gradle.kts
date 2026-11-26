@@ -26,9 +26,9 @@ android {
         applicationId = "com.tools.systemtool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 489
+        versionCode = 490
 
-        versionName = "3.3.3"
+        versionName = "3.3.4"
     }
 
     buildTypes {
@@ -68,6 +68,9 @@ dependencies {
     implementation("dev.rikka.shizuku:provider:13.1.5")
     // 服务�?AIDL（IShizukuService/IRemoteProcess）：用户服务连不上时用newProcess 兜底执行命令
     implementation("dev.rikka.shizuku:aidl:13.1.5")
+    // SIM 国家码：ICarrierConfigLoader / IActivityManager 都是隐藏内部类，targetSdk 34 下
+    // 不豁免 hidden API 就反射不到，这里不替换 android.jar，只加运行时豁免
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:4.3")
     // ADB host（无线调试配对）：另一条 shell 授权来源，不依赖 Shizuku
     // ADB host：无线调试配对，另一条 shell 授权来源（beta 专用）
     implementation("com.github.Ernest-su:adb:v0.2.1")

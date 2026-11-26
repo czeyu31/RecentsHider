@@ -1,6 +1,6 @@
 # System Tool
 
-一款基于 Shizuku 的 Android 系统工具箱，集成应用隐藏、无障碍保活、通知历史、局域网远控、BLE 心率与温度监控等功能。
+一款基于 Shizuku 的 Android 系统工具箱，集成应用隐藏、无障碍保活、通知历史、局域网远控、SIM 国家码、BLE 心率与温度监控等功能。
 
 ## ⬇️ 下载
 
@@ -17,7 +17,7 @@
 - 左滑进入无障碍管理页面
 
 ### 🧰 工具箱
-工具箱里的八个工具，全部在本机执行。
+工具箱里的九个工具，全部在本机执行。
 
 #### 👁️ 应用管理
 - 🔍 搜索应用
@@ -52,6 +52,12 @@
 - 局域网内把本机屏幕共享给另一台手机
 - 也可以反过来查看对端画面
 - 仅传输画面，不走公网
+
+#### 📶 SIM 国家码
+- 通过 Shizuku 修改系统读到的运营商国家（`CarrierConfig` 的 `sim_country_iso_override_string`）
+- 不改动 SIM 卡本身，双卡可分别设置，随时还原
+- 覆盖前后对照、调用记录与脱敏日志导出
+- 部分 ROM 直接以 shell 身份写会被拒，自动降级到 Instrumentation 借权限身份写入
 
 #### ❤️ 心率广播
 - 通过 BLE 接收手环、手表的实时心率
@@ -122,6 +128,12 @@
 - Jetpack Compose
 - Shizuku API
 - NanoHTTPD
+
+## 致谢
+
+- SIM 国家码的实现思路参考了 [Nrfr](https://github.com/Ackites/Nrfr)（Apache-2.0）：
+  调 `ICarrierConfigLoader.overrideConfig` 改运营商配置，以及用一次 Instrumentation 启动
+  取得 shell 权限身份的兜底方式。本项目的代码是按自身架构重写的，未直接复制其源码。
 
 ## 许可证
 

@@ -48,7 +48,7 @@ import com.example.hiderecents.ui.theme.rememberMotionEnabled
 /** 自绘图标集：统一 24x24 坐标系、1.5dp 描边、圆头端点。不使用 Material 图标库默认形状。 */
 enum class DshIconKind {
     GEAR, GRID, SHIELD, CHEVRON, SEARCH, TERMINAL, BELL, PACKAGE, TRANSFER, MENU, ARROW_LEFT, ARROW_RIGHT,
-    FILE, IMAGE, CLIPBOARD, FOLDER, BACK, SLIDERS, HEART, THERMO, PLAY, STOP, ISLAND
+    FILE, IMAGE, CLIPBOARD, FOLDER, BACK, SLIDERS, HEART, THERMO, PLAY, STOP, ISLAND, SIM
 }
 
 /** 画布背景：主题底色的纵向渐变（纸本是纸面提亮到纸影，石墨是冷石墨到更深的底）。 */
@@ -205,6 +205,29 @@ fun DshIcon(
                 )
                 drawCircle(color = tint, radius = 1.3f * u, center = Offset(8f * u, 12f * u))
                 line(12.5f, 12f, 17f, 12f)
+            }
+
+            DshIconKind.SIM -> {
+                // 卡体：右上角切角的矩形 + 中间的触点块
+                val body = Path().apply {
+                    moveTo(6.5f * u, 3.4f * u)
+                    lineTo(14.2f * u, 3.4f * u)
+                    lineTo(19.2f * u, 8.4f * u)
+                    lineTo(19.2f * u, 20.4f * u)
+                    lineTo(6.5f * u, 20.4f * u)
+                    close()
+                }
+                drawPath(body, tint, style = stroke)
+                line(14.2f, 3.4f, 14.2f, 8.4f)
+                line(14.2f, 8.4f, 19.2f, 8.4f)
+                drawRoundRect(
+                    color = tint,
+                    topLeft = Offset(9.4f * u, 11.4f * u),
+                    size = Size(7f * u, 5.6f * u),
+                    cornerRadius = CornerRadius(1.1f * u, 1.1f * u),
+                    style = stroke,
+                )
+                line(9.4f, 14.2f, 16.4f, 14.2f)
             }
 
             DshIconKind.THERMO -> {

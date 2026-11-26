@@ -134,6 +134,13 @@ class ToolboxActivity : DshActivity() {
             icon = DshIconKind.TRANSFER,
             onClick = { open(RemoteControlActivity::class.java) },
         ),
+        ToolboxTool(
+            title = "SIM 国家码",
+            desc = "修改系统读到的运营商国家，不动 SIM 卡，可随时还原",
+            meta = "Shizuku · 可还原",
+            icon = DshIconKind.SIM,
+            onClick = { open(SimCountryActivity::class.java) },
+        ),
         // 心率广播与原生岛都排在末尾：两张正方形卡片一左一右
         // 「应用管理」独占首行、中间两列成对，原有位置不变
         ToolboxTool(

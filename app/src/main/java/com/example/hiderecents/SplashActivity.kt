@@ -65,6 +65,7 @@ class SplashActivity : AppCompatActivity() {
             TempActivity::class.java.name,
             IslandActivity::class.java.name,
             HeartRateActivity::class.java.name,
+            SimCountryActivity::class.java.name,
         )
     }
 

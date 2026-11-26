@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -122,47 +124,55 @@ fun ToolboxScreen(
 
             Spacer(Modifier.height(if (surface.hasPanels) dimens.gapL else 26.dp))
 
-            // 首项独占整行
-            tools.firstOrNull()?.let { first ->
-                StaggeredEnter(index = 0) {
-                    ToolTile(tool = first, wide = true)
+            // 工具数量会随版本增加，超出屏高时整格区域要能滚动。
+            // 不滚动的话 Column 会把剩余高度按顺序分给子项，最后一行（正方形卡片）
+            // 被压进那点剩余空间里，表现为「卡片被压扁、内容被裁掉」。
+            Column(
+                Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                // 首项独占整行
+                tools.firstOrNull()?.let { first ->
+                    StaggeredEnter(index = 0) {
+                        ToolTile(tool = first, wide = true)
+                    }
+                    if (surface.hasPanels) Spacer(Modifier.height(10.dp))
                 }
-                if (surface.hasPanels) Spacer(Modifier.height(10.dp))
-            }
 
-            // 其余两列，逐行排列；最后一行若只剩一个工具，让它整行铺满
-            // 注意：行间距的 Spacer 必须放在 StaggeredEnter 外面。
-            // StaggeredEnter 内部是 Box，Box 的子项是层叠而非依次排列，
-            // Spacer 放进去不会撑开高度，会被卡片盖住 —— 这就是「卡片上下没有间隔」的原因。
-            tools.drop(1).chunked(2).forEachIndexed { rowIndex, pair ->
-                StaggeredEnter(index = rowIndex + 1) {
-                    if (pair.size == 1) {
-                        ToolTile(tool = pair[0], wide = true)
-                    } else {
-                        Row(Modifier.fillMaxWidth()) {
-                            pair.forEachIndexed { index, tool ->
-                                if (index > 0 && surface.hasPanels) {
-                                    Spacer(Modifier.width(10.dp))
-                                }
-                                Box(Modifier.weight(1f)) {
-                                    ToolTile(
-                                        tool = tool,
-                                        wide = false,
-                                        leftRule = index > 0,
-                                    )
+                // 其余两列，逐行排列；最后一行若只剩一个工具，让它整行铺满
+                // 注意：行间距的 Spacer 必须放在 StaggeredEnter 外面。
+                // StaggeredEnter 内部是 Box，Box 的子项是层叠而非依次排列，
+                // Spacer 放进去不会撑开高度，会被卡片盖住 —— 这就是「卡片上下没有间隔」的原因。
+                tools.drop(1).chunked(2).forEachIndexed { rowIndex, pair ->
+                    StaggeredEnter(index = rowIndex + 1) {
+                        if (pair.size == 1) {
+                            ToolTile(tool = pair[0], wide = true)
+                        } else {
+                            Row(Modifier.fillMaxWidth()) {
+                                pair.forEachIndexed { index, tool ->
+                                    if (index > 0 && surface.hasPanels) {
+                                        Spacer(Modifier.width(10.dp))
+                                    }
+                                    Box(Modifier.weight(1f)) {
+                                        ToolTile(
+                                            tool = tool,
+                                            wide = false,
+                                            leftRule = index > 0,
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
+                    if (surface.hasPanels) Spacer(Modifier.height(10.dp))
                 }
-                if (surface.hasPanels) Spacer(Modifier.height(10.dp))
+
+                if (!surface.hasPanels) DshDivider()
+
+                // 底部不再放提示文案（原「长按工具可置顶到首页」已移除）
+                Spacer(Modifier.height(26.dp))
             }
-
-            if (!surface.hasPanels) DshDivider()
-
-            // 底部不再放提示文案（原「长按工具可置顶到首页」已移除）
-            Spacer(Modifier.weight(1f))
-            Spacer(Modifier.height(26.dp))
         }
     }
 }
