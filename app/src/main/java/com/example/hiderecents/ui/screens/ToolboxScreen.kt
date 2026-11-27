@@ -1,32 +1,59 @@
 package com.example.hiderecents.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridItemInfo
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshIconButton
@@ -38,6 +65,7 @@ import com.example.hiderecents.ui.components.dshClickable
 import com.example.hiderecents.ui.components.dshFieldFill
 import com.example.hiderecents.ui.components.paperHeaderRule
 import com.example.hiderecents.ui.theme.Dsh
+import kotlin.math.roundToInt
 
 /** 工具箱中的一个工具项 */
 data class ToolboxTool(
@@ -56,23 +84,63 @@ private val HalfTileMinHeight = 152.dp
 /**
  * 工具箱。
  *
- * 等高规则（这是参考板的核心特征）：
- * 不再使用 IntrinsicSize.Max + fillMaxHeight —— 那套在 intrinsic 测量阶段会把子项固有高度算成 0，
- * 导致整行塌成零高、卡片全部消失（纸本工具箱就是这么空掉的）。
- * 改为内容驱动：标题 1 行 + 说明固定 2 行 + meta 1 行 + heightIn(min = 152dp)，
- * 同一行两张卡片结构一致，高度天然相等。
+ * 布局：LazyVerticalGrid 两列，首项独占整行（span = 2），其余按两列排；
+ * 若剩余数量为奇数，最后一个独占整行（与旧版 chunked(2) 的收尾规则一致）。
+ * 卡片外观完全交给 [ToolTile]，方形/纸本描边逻辑保持不变。
+ *
+ * 拖拽排序（原地网格）：
+ * - 长按某张卡进入拖拽（点按仍然是打开工具），触发一次触感反馈；
+ * - 被托起的卡用一层悬浮「残影」跟手，原格变透明但保留占位，作为落位空档；
+ * - 手指每帧落在哪一格，就用 onReorder 实时交换顺序；
+ * - 其余卡片靠 Modifier.animateItem() 的弹簧动画让位；
+ * - 松手后由调用方持久化顺序（onReorderSettled）。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ToolboxScreen(
     tools: List<ToolboxTool>,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenSettings: () -> Unit = {},
+    onReorder: (from: Int, to: Int) -> Unit = { _, _ -> },
+    onReorderSettled: () -> Unit = {},
 ) {
     val colors = Dsh.colors
     val dimens = Dsh.dimens
     val type = Dsh.type
     val surface = Dsh.surface
+
+    val gridState = rememberLazyGridState()
+    val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
+
+    // 拖拽运行时状态（用 snapshot state，确保手势协程读到的是最新值，而不是捕获时的旧值）
+    var draggingKey by remember { mutableStateOf<String?>(null) }
+    var draggingIndex by remember { mutableIntStateOf(-1) }
+    var pointer by remember { mutableStateOf(Offset.Zero) }
+    var grab by remember { mutableStateOf(Offset.Zero) }
+    var ghostWidthPx by remember { mutableIntStateOf(0) }
+    var ghostWide by remember { mutableStateOf(false) }
+    var showGhost by remember { mutableStateOf(false) }
+    var autoScroll by remember { mutableStateOf(0f) }
+
+    // 回调可能在重组中换实例，用 rememberUpdatedState 保证手势里用最新的
+    val currentOnReorder by rememberUpdatedState(onReorder)
+    val currentOnSettled by rememberUpdatedState(onReorderSettled)
+
+    // 拖到上/下边缘时的自动滚动：手势作用域不能直接调 suspend 的 scrollBy，
+    // 这里用手势写入的 autoScroll 信号，在每帧协程里真正滚动。
+    LaunchedEffect(Unit) {
+        while (true) {
+            val s = autoScroll
+            if (s != 0f) gridState.scrollBy(s * 22f)
+            withFrameNanos { }
+        }
+    }
+
+    val isPanel = surface.hasPanels
+    val gap = if (isPanel) 10.dp else 0.dp
+    val lastLone = (tools.size - 1) % 2 == 1
 
     Box(modifier.fillMaxSize().dshCanvasBackground()) {
         Column(
@@ -124,54 +192,139 @@ fun ToolboxScreen(
 
             Spacer(Modifier.height(if (surface.hasPanels) dimens.gapL else 26.dp))
 
-            // 工具数量会随版本增加，超出屏高时整格区域要能滚动。
-            // 不滚动的话 Column 会把剩余高度按顺序分给子项，最后一行（正方形卡片）
-            // 被压进那点剩余空间里，表现为「卡片被压扁、内容被裁掉」。
-            Column(
-                Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                // 首项独占整行
-                tools.firstOrNull()?.let { first ->
-                    StaggeredEnter(index = 0) {
-                        ToolTile(tool = first, wide = true)
-                    }
-                    if (surface.hasPanels) Spacer(Modifier.height(10.dp))
-                }
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                val draggingTool = draggingKey?.let { k -> tools.firstOrNull { it.title == k } }
 
-                // 其余两列，逐行排列；最后一行若只剩一个工具，让它整行铺满
-                // 注意：行间距的 Spacer 必须放在 StaggeredEnter 外面。
-                // StaggeredEnter 内部是 Box，Box 的子项是层叠而非依次排列，
-                // Spacer 放进去不会撑开高度，会被卡片盖住 —— 这就是「卡片上下没有间隔」的原因。
-                tools.drop(1).chunked(2).forEachIndexed { rowIndex, pair ->
-                    StaggeredEnter(index = rowIndex + 1) {
-                        if (pair.size == 1) {
-                            ToolTile(tool = pair[0], wide = true)
-                        } else {
-                            Row(Modifier.fillMaxWidth()) {
-                                pair.forEachIndexed { index, tool ->
-                                    if (index > 0 && surface.hasPanels) {
-                                        Spacer(Modifier.width(10.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    state = gridState,
+                    contentPadding = PaddingValues(bottom = 26.dp),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                    verticalArrangement = Arrangement.spacedBy(gap),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                // 长按才进入拖拽；长按前若有明显位移则让给滚动
+                                val longPress = awaitLongPressOrCancellation(down.id)
+                                    ?: return@awaitEachGesture
+
+                                fun itemAt(p: Offset): LazyGridItemInfo? =
+                                    gridState.layoutInfo.visibleItemsInfo.firstOrNull { info ->
+                                        if (info.index >= tools.size) return@firstOrNull false
+                                        val o = info.offset
+                                        p.x >= o.x && p.x < o.x + info.size.width &&
+                                            p.y >= o.y && p.y < o.y + info.size.height
                                     }
-                                    Box(Modifier.weight(1f)) {
-                                        ToolTile(
-                                            tool = tool,
-                                            wide = false,
-                                            leftRule = index > 0,
-                                        )
+
+                                val start = itemAt(longPress.position)
+                                    ?: return@awaitEachGesture
+
+                                draggingKey = start.key as? String
+                                draggingIndex = start.index
+                                grab = longPress.position -
+                                    Offset(start.offset.x.toFloat(), start.offset.y.toFloat())
+                                ghostWidthPx = start.size.width
+                                ghostWide = start.index == 0
+                                pointer = longPress.position
+                                showGhost = true
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+
+                                val h = size.height.toFloat()
+                                val edge = 56.dp.toPx()
+
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val ch = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    pointer = ch.position
+
+                                    val target = itemAt(ch.position)
+                                    if (target != null && target.index != draggingIndex) {
+                                        currentOnReorder(draggingIndex, target.index)
+                                        draggingIndex = target.index
                                     }
+
+                                    // 通知每帧协程：靠近上/下边缘时自动滚动，方便跨屏排序
+                                    autoScroll = when {
+                                        ch.position.y < edge -> -1f
+                                        ch.position.y > h - edge -> 1f
+                                        else -> 0f
+                                    }
+
+                                    if (ch.changedToUpIgnoreConsumed()) {
+                                        ch.consume()
+                                        break
+                                    }
+                                    ch.consume()
+                                }
+
+                                showGhost = false
+                                draggingKey = null
+                                draggingIndex = -1
+                                autoScroll = 0f
+                                currentOnSettled()
+                            }
+                        },
+                ) {
+                    tools.forEachIndexed { index, tool ->
+                        val isFull = index == 0 || (lastLone && index == tools.size - 1)
+                        item(
+                            key = tool.title,
+                            span = { GridItemSpan(if (isFull) maxLineSpan else 1) },
+                        ) {
+                            val isDragging = tool.title == draggingKey
+                            val col = if (index <= 0) 0 else (index - 1) % 2
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .animateItem()
+                                    .graphicsLayer { alpha = if (isDragging) 0f else 1f },
+                            ) {
+                                StaggeredEnter(index = index) {
+                                    ToolTile(
+                                        tool = tool,
+                                        wide = isFull,
+                                        leftRule = !isPanel && col == 1,
+                                    )
                                 }
                             }
                         }
                     }
-                    if (surface.hasPanels) Spacer(Modifier.height(10.dp))
+
+                    if (!isPanel) {
+                        item(key = "__divider__", span = { GridItemSpan(maxLineSpan) }) {
+                            DshDivider()
+                        }
+                    }
                 }
 
-                if (!surface.hasPanels) DshDivider()
-
-                // 底部不再放提示文案（原「长按工具可置顶到首页」已移除）
-                Spacer(Modifier.height(26.dp))
+                // 悬浮残影：跟随手指，视觉上就是「被拿起来的那张卡」
+                if (showGhost && draggingTool != null) {
+                    val ghostW = with(density) { ghostWidthPx.toDp() }
+                    Box(
+                        Modifier
+                            .offset {
+                                IntOffset(
+                                    (pointer.x - grab.x).roundToInt(),
+                                    (pointer.y - grab.y).roundToInt(),
+                                )
+                            }
+                            .width(ghostW)
+                            .graphicsLayer {
+                                scaleX = 1.045f
+                                scaleY = 1.045f
+                                // 石墨：投影 + 圆角，表示“拿起来”；纸本是平面印刷感，不加投影也不加描边
+                                if (isPanel) {
+                                    shadowElevation = 20.dp.toPx()
+                                    shape = RoundedCornerShape(dimens.tileRadius)
+                                }
+                                clip = false
+                            },
+                    ) {
+                        ToolTile(tool = draggingTool, wide = ghostWide, interactive = false)
+                    }
+                }
             }
         }
     }
@@ -204,6 +357,7 @@ private fun ToolTile(
     tool: ToolboxTool,
     wide: Boolean,
     leftRule: Boolean = false,
+    interactive: Boolean = true,
 ) {
     val colors = Dsh.colors
     val dimens = Dsh.dimens
@@ -237,7 +391,13 @@ private fun ToolTile(
                     Modifier
                 },
             )
-            .dshClickable(scaleOnPress = true, onClick = tool.onClick)
+            .then(
+                if (interactive) {
+                    Modifier.dshClickable(scaleOnPress = true, onClick = tool.onClick)
+                } else {
+                    Modifier
+                },
+            )
             .then(
                 if (!wide && tool.square) {
                     Modifier.aspectRatio(1f)

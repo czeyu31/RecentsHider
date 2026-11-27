@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -41,6 +42,9 @@ class ToolboxActivity : DshActivity() {
     private var hiddenCount by mutableStateOf(0)
     private var hideGuard by mutableStateOf(true)
 
+    // 工具箱顺序（可拖拽重排）：用 SnapshotStateList 保证重排即时反映到 UI
+    private val tools = mutableStateListOf<ToolboxTool>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -49,16 +53,27 @@ class ToolboxActivity : DshActivity() {
         readPrefs()
         applyDshSystemBars(appTheme)
 
+        // 按上次保存的顺序填充工具列表（首次进入为默认顺序）
+        tools.clear()
+        tools.addAll(orderedTools())
+
         setContent {
             DshTheme(theme = appTheme) {
                 Box(Modifier.fillMaxSize()) {
                     ToolboxScreen(
-                        tools = buildTools(),
+                        tools = tools,
                         onBack = { closePanel() },
                         onOpenSettings = {
                             readPrefs()
                             showSettings = true
                         },
+                        onReorder = { from, to ->
+                            if (from in tools.indices && to in tools.indices && from != to) {
+                                val moved = tools.removeAt(from)
+                                tools.add(to, moved)
+                            }
+                        },
+                        onReorderSettled = { persistOrder() },
                     )
 
                     if (showSettings) {
@@ -161,6 +176,29 @@ class ToolboxActivity : DshActivity() {
         ),
 
     )
+
+    /** 读取保存的排序，按标题顺序重排默认工具表；新工具（未记录）追加到末尾。 */
+    private fun orderedTools(): List<ToolboxTool> {
+        val base = buildTools()
+        val saved = prefs.getString("toolbox_order_v3", null)
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+        if (saved.isNullOrEmpty()) return base
+        val byTitle = base.associateBy { it.title }
+        if (byTitle.size != base.size) return base
+        val ordered = ArrayList<ToolboxTool>(base.size)
+        saved.forEach { title -> byTitle[title]?.let { ordered.add(it) } }
+        base.forEach { tool -> if (ordered.none { it.title == tool.title }) ordered.add(tool) }
+        return ordered
+    }
+
+    /** 把当前顺序写回偏好（按标题用逗号拼接）。 */
+    private fun persistOrder() {
+        prefs.edit()
+            .putString("toolbox_order_v3", tools.joinToString(",") { it.title })
+            .apply()
+    }
 
     private fun open(target: Class<*>) {
         startActivity(Intent(this, target))
