@@ -430,26 +430,6 @@ fun HomeScreen(
                 }
             }
 
-            if (!surface.hasPanels) {
-                Spacer(Modifier.height(dimens.gapXl))
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(color = colors.hairline),
-                )
-                Spacer(Modifier.height(dimens.gapM))
-                Text("工作方式", style = type.label, color = colors.inkFaint)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "隐藏通过 Shizuku 把任务标记为「不进最近任务」实现（不会结束应用），" +
-                        "保活通过 settings put secure 写入；SIM 国家码通过 CarrierConfig 覆盖系统读到的运营商国家，" +
-                        "不改动 SIM 卡本身、可随时还原。全部在本机执行。",
-                    style = type.body,
-                    color = colors.inkMuted,
-                )
-            }
-
             Spacer(Modifier.weight(1f))
 
             // ---------------- 底部 ----------------
