@@ -21,6 +21,12 @@ object IslandSettings {
     var heartShowDevice by mutableStateOf(true)
     var heartShowSignal by mutableStateOf(true)
     var heartOpenOnTap by mutableStateOf(true)
+    /** 岛上右侧的图案（见 IslandArt.ARTS） */
+    var heartArt by mutableStateOf("totem")
+    /** 岛的着色（见 IslandArt.TINT_OPTIONS） */
+    var heartTint by mutableStateOf("theme")
+    /** 岛上是否显示进度条 */
+    var heartProgress by mutableStateOf(true)
 
     // ---------------- 温度岛
     var tempEnabled by mutableStateOf(false)
@@ -38,9 +44,15 @@ object IslandSettings {
     var tempCapsuleZone by mutableStateOf<String?>(null)
     /** 上岛热区（多选） */
     var tempZones by mutableStateOf<Set<String>>(setOf("CPU", "GPU", "电池", "外壳"))
+    /** 岛上右侧的图案（见 IslandArt.ARTS） */
+    var tempArt by mutableStateOf("neko")
+    /** 岛的着色（见 IslandArt.TINT_OPTIONS） */
+    var tempTint by mutableStateOf("theme")
+    /** 岛上是否显示进度条 */
+    var tempProgress by mutableStateOf(true)
 
     // ---------------- 通用
-    /** 上岛方式：auto（按系统能力）/ live（实时更新）/ v3（澎湃 3 焦点通知 V3） */
+    /** 上岛方式：auto（按系统能力）/ live（实时更新）/ v3（澎湃 3 焦点通知 V3）/ std（标准实时活动） */
     var mode by mutableStateOf("auto")
     var updateIntervalMs by mutableStateOf(1_000L)
     var expandDurationMs by mutableStateOf(4_000L)
@@ -60,6 +72,9 @@ object IslandSettings {
         heartShowDevice = p.getBoolean("island_heart_show_device", true)
         heartShowSignal = p.getBoolean("island_heart_show_signal", true)
         heartOpenOnTap = p.getBoolean("island_heart_open_tap", true)
+        heartArt = p.getString("island_heart_art", "totem") ?: "totem"
+        heartTint = p.getString("island_heart_tint", "theme") ?: "theme"
+        heartProgress = p.getBoolean("island_heart_progress", true)
 
         tempEnabled = p.getBoolean("island_temp_on", false)
         tempAlwaysOn = p.getBoolean("island_temp_always_on", true)
@@ -76,6 +91,9 @@ object IslandSettings {
         tempCapsuleZone = p.getString("island_temp_capsule", null)
         tempZones = p.getStringSet("island_temp_zones", setOf("CPU", "GPU", "电池", "外壳"))
             ?.toSet().orEmpty()
+        tempArt = p.getString("island_temp_art", "neko") ?: "neko"
+        tempTint = p.getString("island_temp_tint", "theme") ?: "theme"
+        tempProgress = p.getBoolean("island_temp_progress", true)
 
         mode = p.getString("island_mode", "auto") ?: "auto"
         updateIntervalMs = p.getLong("island_update_ms", 1_000L)
@@ -92,6 +110,9 @@ object IslandSettings {
             .putBoolean("island_heart_show_device", heartShowDevice)
             .putBoolean("island_heart_show_signal", heartShowSignal)
             .putBoolean("island_heart_open_tap", heartOpenOnTap)
+            .putString("island_heart_art", heartArt)
+            .putString("island_heart_tint", heartTint)
+            .putBoolean("island_heart_progress", heartProgress)
             .putBoolean("island_temp_on", tempEnabled)
             .putBoolean("island_temp_always_on", tempAlwaysOn)
             .putBoolean("island_temp_rec_btn", tempRecordButton)
@@ -104,6 +125,9 @@ object IslandSettings {
             .putLong("island_temp_delay", tempDownDelayMs)
             .putString("island_temp_capsule", tempCapsuleZone)
             .putStringSet("island_temp_zones", tempZones)
+            .putString("island_temp_art", tempArt)
+            .putString("island_temp_tint", tempTint)
+            .putBoolean("island_temp_progress", tempProgress)
             .putString("island_mode", mode)
             .putLong("island_update_ms", updateIntervalMs)
             .putLong("island_expand_ms", expandDurationMs)

@@ -6,9 +6,11 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -43,6 +45,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -50,12 +54,16 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.hiderecents.island.IslandArt
 import com.example.hiderecents.island.IslandPublish
 import com.example.hiderecents.island.IslandSettings
+import com.example.hiderecents.island.IslandStandard
+import com.example.hiderecents.island.XiaomiFocusGate
 import com.example.hiderecents.ui.components.DshDivider
 import com.example.hiderecents.ui.components.DshIcon
 import com.example.hiderecents.ui.components.DshIconKind
@@ -94,8 +102,8 @@ fun IslandSettingsScreen(
     val dimens = Dsh.dimens
     val type = Dsh.type
 
-    // 岛上按钮只在「系统实时更新」通道可用（Android 16+）；焦点通知 V3 没有按钮
-    val buttonSupported = IslandPublish.liveUpdatesSupported()
+    // 岛上按钮只在两条「走通知」的方式里可用（实时更新 / 标准实时活动）；焦点通知 V3 没有按钮
+    val buttonSupported = IslandPublish.liveUpdatesSupported() || IslandSettings.mode == "std"
 
     // 分类栏：通用在最前，后面按岛排。加新岛就在这里加一项、再加一个分支
     val tabs = listOf("通用", "心率岛", "温度岛")
@@ -275,6 +283,7 @@ private fun GeneralTab(onChange: () -> Unit, onTest: () -> Unit) {
     val type = Dsh.type
     val surface = Dsh.surface
     val s = IslandSettings
+    val ctx = LocalContext.current
 
     fun set(block: () -> Unit) {
         block()
@@ -289,21 +298,78 @@ private fun GeneralTab(onChange: () -> Unit, onTest: () -> Unit) {
             Modifier.fillMaxWidth(),
             contentPadding = if (surface.hasPanels) PaddingValues(horizontal = 14.dp) else PaddingValues(0.dp),
         ) {
-            CycleRow(
-                "上岛方式",
-                when (s.mode) {
-                    "live" -> "实时更新（Android 16+）"
-                    "v3" -> "焦点通知 V3（澎湃 3）"
-                    else -> "自动"
+            // 四条通道各占一行，点哪条走哪条。
+            // 光看名字分不出差别，所以每项在选中时都说明本机能不能用。
+            Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
+                Text("上岛方式", style = type.rowTitle, color = colors.ink)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "四条通道，点哪条走哪条",
+                    style = type.caption,
+                    color = colors.inkFaint,
+                )
+            }
+            ChoiceRow(
+                "自动",
+                if (IslandPublish.liveUpdatesSupported()) {
+                    "本机走实时更新（Android 16 及以上）"
+                } else {
+                    "本机走焦点通知 V3"
                 },
-            ) {
-                set {
-                    s.mode = when (s.mode) {
-                        "auto" -> "v3"
-                        "v3" -> "live"
-                        else -> "auto"
-                    }
-                }
+                selected = s.mode == "auto",
+            ) { set { s.mode = "auto" } }
+            DshDivider()
+            ChoiceRow(
+                "实时更新",
+                "通知 + 小米模板，靠系统提升",
+                selected = s.mode == "live",
+            ) { set { s.mode = "live" } }
+            if (s.mode == "live" && !IslandPublish.liveUpdatesSupported()) {
+                Text(
+                    "本机低于 Android 16，这条不会发通知",
+                    style = type.caption,
+                    color = colors.accent,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+            }
+            DshDivider()
+            ChoiceRow(
+                "焦点通知 V3",
+                "澎湃私有协议，不走系统提升",
+                selected = s.mode == "v3",
+            ) { set { s.mode = "v3" } }
+            // V3 在澎湃上要靠焦点通知白名单：没放行时通知发得出去、岛不出来
+            if (s.mode == "v3" && XiaomiFocusGate.isXiaomi()) {
+                val focusOk = remember { XiaomiFocusGate.allowed(ctx) }
+                Text(
+                    if (focusOk) {
+                        "系统已放行焦点通知"
+                    } else {
+                        "系统未放行本应用的焦点通知，这条在本机不会有岛"
+                    },
+                    style = type.caption,
+                    color = if (focusOk) colors.inkFaint else colors.accent,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+            }
+            DshDivider()
+            ChoiceRow(
+                "标准实时活动",
+                "系统提升，HyperOS / ColorOS / MagicOS 通用",
+                selected = s.mode == "std",
+            ) { set { s.mode = "std" } }
+            if (s.mode == "std") {
+                val stdOk = remember { IslandStandard.supported(ctx) }
+                Text(
+                    if (stdOk) {
+                        "本机可用：由系统决定画成状态栏胶囊还是岛"
+                    } else {
+                        "本机不支持（需 Android 16），这条不会发通知"
+                    },
+                    style = type.caption,
+                    color = if (stdOk) colors.inkFaint else colors.accent,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
             }
             DshDivider()
             CycleRow("岛优先级", if (s.tempPriority) "温度优先" else "心率优先") {
@@ -379,6 +445,29 @@ private fun HeartTab(onChange: () -> Unit, buttonSupported: Boolean) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 16.dp),
     ) {
+        Section("ISLAND LOOK · 外观", "图案与岛色")
+        DshPanel(
+            Modifier.fillMaxWidth(),
+            contentPadding = if (surface.hasPanels) PaddingValues(horizontal = 14.dp) else PaddingValues(0.dp),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                Text("岛上的图案", style = type.rowTitle, color = colors.ink)
+                Spacer(Modifier.height(10.dp))
+                ArtPicker(s.heartArt, s.heartTint) { set { s.heartArt = it } }
+            }
+            DshDivider()
+            Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                Text("岛色", style = type.rowTitle, color = colors.ink)
+                Spacer(Modifier.height(10.dp))
+                TintPicker(s.heartTint) { set { s.heartTint = it } }
+            }
+            DshDivider()
+            SwitchRow("显示岛上进度条", "关掉只留文字与计时", s.heartProgress) {
+                set { s.heartProgress = it }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Pill("72", "bpm", fill = colors.ink)
             Pill("01:23", "REC", fill = colors.accent)
@@ -438,6 +527,29 @@ private fun TempTab(
     Column(
         Modifier.fillMaxSize().verticalScroll(tempScroll).padding(top = 16.dp),
     ) {
+        Section("ISLAND LOOK · 外观", "图案与岛色")
+        DshPanel(
+            Modifier.fillMaxWidth(),
+            contentPadding = if (surface.hasPanels) PaddingValues(horizontal = 14.dp) else PaddingValues(0.dp),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                Text("岛上的图案", style = type.rowTitle, color = colors.ink)
+                Spacer(Modifier.height(10.dp))
+                ArtPicker(s.tempArt, s.tempTint) { set { s.tempArt = it } }
+            }
+            DshDivider()
+            Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                Text("岛色", style = type.rowTitle, color = colors.ink)
+                Spacer(Modifier.height(10.dp))
+                TintPicker(s.tempTint) { set { s.tempTint = it } }
+            }
+            DshDivider()
+            SwitchRow("显示岛上进度条", "关掉只留文字与计时", s.tempProgress) {
+                set { s.tempProgress = it }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Pill("45.2", "℃", fill = colors.ink)
             Pill("01:23", "REC", fill = colors.accent)
@@ -754,5 +866,174 @@ private fun CycleRow(title: String, value: String, onClick: () -> Unit) {
         Text(title, style = type.rowTitle, color = colors.ink)
         Spacer(Modifier.weight(1f))
         Text(value, style = type.monoSmall, color = colors.inkMuted)
+    }
+}
+
+/**
+ * 单选项：标题 + 一句说明，右侧方框选中时填强调色。
+ *
+ * 上岛方式只有两项，用单选比循环切换清楚：不用点好几下才轮到下一项，
+ * 也看得出现在选的是哪一个。
+ */
+@Composable
+private fun ChoiceRow(
+    title: String,
+    sub: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = Dsh.colors
+    val type = Dsh.type
+    Row(
+        Modifier.fillMaxWidth().dshClickable(scaleOnPress = false, onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = type.rowTitle, color = colors.ink)
+            if (sub.isNotEmpty()) {
+                Spacer(Modifier.height(3.dp))
+                Text(sub, style = type.caption, color = colors.inkFaint)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Box(
+            Modifier
+                .size(15.dp)
+                .border(
+                    width = 1.dp,
+                    color = if (selected) colors.accent else colors.hairlineStrong,
+                    shape = RoundedCornerShape(3.dp),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Box(Modifier.size(7.dp).background(colors.accent, RoundedCornerShape(2.dp)))
+            }
+        }
+    }
+}
+/**
+ * 图案选择：横向一排缩略图，选中的加一圈强调色边框。
+ *
+ * 缩略图直接照字符网格现画，和岛上用的是同一份数据，所以看到的就是实际效果。
+ */
+@Composable
+private fun ArtPicker(
+    selectedId: String,
+    tintId: String,
+    onPick: (String) -> Unit,
+) {
+    val colors = Dsh.colors
+    val type = Dsh.type
+    val ctx = LocalContext.current
+    val tint = remember(tintId) { IslandArt.tintColor(ctx, tintId) }
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        IslandArt.ARTS.forEach { art ->
+            val picked = art.id == selectedId
+            Column(
+                Modifier.width(64.dp).dshClickable(scaleOnPress = false) { onPick(art.id) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        // 缩略图用深色底：岛就是深色背景，浅底会让图案里的白色糊成一片
+                        .background(Color(0xFF1A1D20))
+                        .border(
+                            width = if (picked) 1.5.dp else 1.dp,
+                            color = if (picked) colors.accent else colors.hairline,
+                            shape = RoundedCornerShape(10.dp),
+                        )
+                        .padding(6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ArtThumb(art, tint, Modifier.fillMaxSize())
+                }
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    art.label,
+                    style = type.caption,
+                    color = if (picked) colors.accent else colors.inkFaint,
+                )
+            }
+        }
+    }
+}
+
+/** 把一块图案按字符网格画进给定区域，保持格子正方形、整体居中 */
+@Composable
+private fun ArtThumb(art: IslandArt.Art, tint: Int, modifier: Modifier = Modifier) {
+    val palette = remember(art, tint) {
+        art.palette ?: mapOf('#' to tint, '+' to 0xFFF2F0EA.toInt())
+    }
+    Canvas(modifier) {
+        val rows = art.pattern.size
+        val cols = art.pattern.maxOf { it.length }
+        val cell = minOf(size.width / cols, size.height / rows)
+        val ox = (size.width - cols * cell) / 2f
+        val oy = (size.height - rows * cell) / 2f
+        art.pattern.forEachIndexed { r, line ->
+            line.forEachIndexed { c, ch ->
+                val color = palette[ch] ?: return@forEachIndexed
+                drawRect(
+                    color = Color(color),
+                    topLeft = Offset(ox + c * cell, oy + r * cell),
+                    // 多描一点，避免格子之间露出底色细缝
+                    size = Size(cell + 0.5f, cell + 0.5f),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 岛色：一排圆点，选中的外套一圈同色细环、中间留一道缝。
+ * "跟随主题"那一项用当前主题的强调色显示。
+ */
+@Composable
+private fun TintPicker(selectedId: String, onPick: (String) -> Unit) {
+    val ctx = LocalContext.current
+    val themeTint = remember { IslandArt.tintColor(ctx, "theme") }
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        IslandArt.TINT_OPTIONS.forEach { tint ->
+            val color = tint.color ?: themeTint
+            val picked = tint.id == selectedId
+            // 跟随主题不是某个固定色（纸本下它接近白），画成空心环，免得跟"白"那颗撞脸
+            val auto = tint.color == null
+            Box(
+                Modifier.size(38.dp).dshClickable(scaleOnPress = false) { onPick(tint.id) },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (picked) {
+                    Box(
+                        Modifier
+                            .size(38.dp)
+                            .border(2.dp, Color(color), RoundedCornerShape(50)),
+                    )
+                }
+                if (auto) {
+                    Box(
+                        Modifier
+                            .size(24.dp)
+                            .border(2.dp, Color(color), RoundedCornerShape(50)),
+                    )
+                } else {
+                    Box(
+                        Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(Color(color)),
+                    )
+                }
+            }
+        }
     }
 }

@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import android.content.Intent
 import com.example.hiderecents.hr.HeartRateService
 import com.example.hiderecents.island.IslandPublish
+import com.example.hiderecents.island.IslandStandard
 import com.example.hiderecents.island.ThermalIsland
 import com.example.hiderecents.island.IslandSettings
 import com.example.hiderecents.ui.screens.IslandSettingsScreen
@@ -72,8 +73,30 @@ class IslandActivity : DshActivity() {
         }
     }
 
-    /** 「发一条测试岛」：不依赖采样与心率连接，直接贴一条固定的岛。 */
+    /** 「发一条测试岛」：不依赖采样与心率连接，直接贴一条固定的岛。按当前选的方式发。 */
     private fun postTest() {
+        if (IslandSettings.mode == "std") {
+            IslandStandard.post(
+                context = this,
+                id = IslandStandard.ID_TEMP,
+                title = "CPU 46.2℃",
+                content = "原生岛自检",
+                leftText = "CPU",
+                rightText = "46.2℃",
+                chip = "46.2℃",
+                progressPct = 62,
+                heart = false,
+                overThreshold = true,
+                contentIntent = IslandPublish.intentFor(this, TempActivity::class.java, requestCode = 30),
+            )
+            val hint = if (IslandStandard.supported(this)) {
+                "已发送，回到桌面看岛"
+            } else {
+                "本机不支持标准实时活动（需 Android 16）"
+            }
+            Toast.makeText(this, hint, Toast.LENGTH_SHORT).show()
+            return
+        }
         IslandPublish.post(
             context = this,
             id = IslandPublish.tempId(),

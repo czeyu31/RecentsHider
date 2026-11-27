@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import com.example.hiderecents.island.IslandStandard
 
 /**
  * 统一返回语义：本页已是任务根时先回首页再结束自己，否则直接结束。
@@ -57,5 +58,11 @@ open class DshActivity : AppCompatActivity() {
 
     protected open fun onDshBackPressed() {
         dshGoBack()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 退到后台补一帧：应用在前台时系统会把实时活动收起来，回到桌面要靠新的发布才重新展示
+        IslandStandard.repostAllIfStd(this)
     }
 }

@@ -168,8 +168,11 @@ object IslandPublish {
      *  · imageTextInfoLeft.type = 1（带图标的文字段）→ 左侧时长
      *  · imageTextInfoRight.type = 2（纯文字段）→ 右侧数值
      *  · smallIslandArea 用系统自带的 liveupdate 图标，保证小胶囊有内容
+     *
+     * 标准通道（[IslandStandard]）在 [XiaomiFocusGate] 放行时也复用这份生成器，
+     * 所以不再是 private；通过 live 通道发布的那条路径一行未动。
      */
-    private fun focusJson(
+    internal fun focusJson(
         title: String,
         content: String,
         left: String,

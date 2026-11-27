@@ -127,6 +127,18 @@ object ThermalIsland {
             acts += "关闭" to IslandPublish.broadcastIntent(context, IslandReceiver.ACTION_TEMP_CLOSE, 22)
         }
 
+        // 标准实时活动通道：发不发由 IslandStandard 自己判断（系统不提升就什么都不发）
+        if (useStd()) {
+            IslandPublish.cancel(context, IslandPublish.tempId())
+            dismissV3(context)
+            publishStd(context, zone, value, left, right, recording, recSeconds, pct, acts)
+            lastPublishAt = now
+            published = true
+            return
+        }
+        // 不在标准通道时，把这条通道可能留下的岛撤下（幂等：没发过就立刻返回）
+        IslandStandard.cancel(context, IslandStandard.ID_TEMP)
+
         if (useV3()) {
             val first = v3SessionId == null
             v3Sequence += 1
@@ -179,6 +191,7 @@ object ThermalIsland {
         IslandSettings.tempEnabled = false
         IslandSettings.save(context)
         IslandPublish.cancel(context, IslandPublish.tempId())
+        IslandStandard.cancel(context, IslandStandard.ID_TEMP)
         dismissV3(context)
         published = false
         armed = false
@@ -209,6 +222,47 @@ object ThermalIsland {
         else -> !IslandPublish.liveUpdatesSupported()
     }
 
+    /** 标准实时活动通道：只在设置里显式选中时才走，auto 不会自动切过去 */
+    private fun useStd(): Boolean = IslandSettings.mode == "std"
+
+    /**
+     * 标准实时活动通道：只请求系统提升，不带任何厂商私有字段。
+     * 小米焦点模板是否附加由 [IslandStandard] 按 [XiaomiFocusGate] 的放行结果决定。
+     */
+    private fun publishStd(
+        context: Context,
+        zone: TempZone,
+        value: Float,
+        left: String,
+        right: String,
+        recording: Boolean,
+        recSeconds: Int,
+        pct: Int,
+        acts: List<Pair<String, android.app.PendingIntent>>,
+    ) {
+        IslandStandard.post(
+            context = context,
+            id = IslandStandard.ID_TEMP,
+            title = zone.label + " " + right,
+            content = if (recording) "温度监控 · 录制中" else "温度监控",
+            leftText = left,
+            rightText = right,
+            // 胶囊右段只放数值：热区名在左段，重复会变成「CPU CPU 49.7℃」
+            chip = right,
+            progressPct = pct,
+            heart = false,
+            // 录制中让系统的计时器自己走，不用每秒重发一个「mm:ss」
+            sinceMs = if (recording) System.currentTimeMillis() - recSeconds * 1000L else null,
+            overThreshold = value >= IslandSettings.tempUpCelsius,
+            contentIntent = if (IslandSettings.tempOpenOnTap) {
+                IslandPublish.intentFor(context, TempActivity::class.java, requestCode = 20)
+            } else {
+                null
+            },
+            actions = acts,
+        )
+    }
+
     private fun dismissV3(context: Context) {
         v3SessionId?.let { IslandV3.dismiss(context, it) }
         v3SessionId = null
@@ -226,6 +280,7 @@ object ThermalIsland {
 
     private fun dropIsland(context: Context) {
         IslandPublish.cancel(context, IslandPublish.tempId())
+        IslandStandard.cancel(context, IslandStandard.ID_TEMP)
         dismissV3(context)
         published = false
     }

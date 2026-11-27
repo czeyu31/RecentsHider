@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.view.WindowCompat
 import com.example.hiderecents.ft.FtOnline
 import com.example.hiderecents.ft.FtOnlineService
+import com.example.hiderecents.island.IslandStandard
 import com.example.hiderecents.ui.screens.HiddenPreview
 import com.example.hiderecents.ui.screens.HomeScreen
 import com.example.hiderecents.ui.screens.HomeUiState
@@ -910,6 +911,12 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(uptimeTicker)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 退到后台补一帧：应用在前台时系统会把实时活动收起来，回到桌面要靠新的发布才重新展示
+        IslandStandard.repostAllIfStd(this)
     }
 
     override fun onDestroy() {

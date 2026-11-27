@@ -20,6 +20,7 @@ import com.example.hiderecents.R
 import com.example.hiderecents.island.IslandPublish
 import com.example.hiderecents.island.IslandV3
 import com.example.hiderecents.island.IslandSettings
+import com.example.hiderecents.island.IslandStandard
 
 /** 服务对外暴露的一帧状态，界面照着它画就行。 */
 data class HrLiveState(
@@ -513,9 +514,73 @@ class HeartRateService : Service() {
         )
     }
 
+    /**
+     * 标准实时活动通道（Android 16 提升，跨厂商）：独立一条通知，与另外两条互不影响。
+     *
+     * 与 live 通道的区别：先问系统能不能提升（不能、小米也不放行就不发，不留垃圾常驻通知）、
+     * 内容没变不重发、每 4 分钟续期、10 分钟超时。
+     */
+    private fun publishStdIsland() {
+        if (!IslandSettings.heartEnabled) {
+            IslandStandard.cancel(this, IslandStandard.ID_HEART)
+            return
+        }
+        val connected = state.link == HrLink.READY && state.bpm > 0
+        if (!connected && IslandSettings.heartDropIslandOnLost) {
+            IslandStandard.cancel(this, IslandStandard.ID_HEART)
+            return
+        }
+        val left = if (recActive) "● " + IslandPublish.clock(recElapsedSec()) else "心率"
+        val right = if (state.bpm > 0) state.bpm.toString() + " bpm" else "--"
+        val content = state.deviceName.ifEmpty { "心率广播" } +
+            if (IslandSettings.heartShowSignal && state.rssi != 0) " · 信号 " + state.rssi + " dBm" else ""
+        val acts = ArrayList<Pair<String, android.app.PendingIntent>>()
+        acts += "断开" to android.app.PendingIntent.getService(
+            this,
+            6,
+            android.content.Intent(this, HeartRateService::class.java).setAction(ACTION_DISCONNECT),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
+        if (IslandSettings.heartRecordButton) {
+            acts += (if (recActive) "停止录制" else "开始录制") to android.app.PendingIntent.getService(
+                this,
+                5,
+                android.content.Intent(this, HeartRateService::class.java).setAction(ACTION_TOGGLE_RECORD),
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+        IslandStandard.post(
+            context = this,
+            id = IslandStandard.ID_HEART,
+            title = right,
+            content = content,
+            leftText = left,
+            rightText = right,
+            // 胶囊右段只放数值；录制时左侧已经是时长，别把时长再塞一遍
+            chip = right,
+            // 心率没有「百分之多少」，-1 不放进度条
+            progressPct = -1,
+            heart = true,
+            // 录制中让系统的计时器自己走
+            sinceMs = if (recActive) System.currentTimeMillis() - recElapsedSec() * 1000L else null,
+            contentIntent = IslandPublish.intentFor(this, HeartRateActivity::class.java, requestCode = 31),
+            actions = acts,
+            // 与另外两条通道取值一致：温度优先时把心率岛排到后面
+            order = if (IslandSettings.tempPriority) 1 else 0,
+            priority = if (IslandSettings.tempPriority) 1 else 2,
+        )
+    }
+
     private fun refreshNotification() {
+        // 标准通道有自己的一条通知，不在它上面时把那条撤掉（幂等：没发过就立刻返回）
+        if (IslandSettings.mode != "std") {
+            IslandStandard.cancel(this, IslandStandard.ID_HEART)
+        }
         // V3 通道独立于前台通知，先按设置重发/撤销岛
-        if (IslandSettings.mode == "v3" || (IslandSettings.mode == "auto" && !IslandPublish.liveUpdatesSupported())) {
+        if (IslandSettings.mode == "std") {
+            IslandPublish.cancel(this, IslandPublish.heartId())
+            publishStdIsland()
+        } else if (IslandSettings.mode == "v3" || (IslandSettings.mode == "auto" && !IslandPublish.liveUpdatesSupported())) {
             IslandPublish.cancel(this, IslandPublish.heartId())
             publishV3Island()
         } else {
